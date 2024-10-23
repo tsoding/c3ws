@@ -18,27 +18,25 @@
 // LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-module c3ws(<Socket>);
-
-import libc;
+module c3ws;
 
 distinct Cws_Opcode = char;
-const Cws_Opcode CWS_OPCODE_CONT  = 0x0;
-const Cws_Opcode CWS_OPCODE_TEXT  = 0x1;
-const Cws_Opcode CWS_OPCODE_BIN   = 0x2;
-const Cws_Opcode CWS_OPCODE_CLOSE = 0x8;
-const Cws_Opcode CWS_OPCODE_PING  = 0x9;
-const Cws_Opcode CWS_OPCODE_PONG  = 0xA;
+const Cws_Opcode OPCODE_CONT  = 0x0;
+const Cws_Opcode OPCODE_TEXT  = 0x1;
+const Cws_Opcode OPCODE_BIN   = 0x2;
+const Cws_Opcode OPCODE_CLOSE = 0x8;
+const Cws_Opcode OPCODE_PING  = 0x9;
+const Cws_Opcode OPCODE_PONG  = 0xA;
 
 fn String opcode_name(Cws_Opcode opcode)
 {
     switch (opcode) {
-    case CWS_OPCODE_CONT:  return "CONT";
-    case CWS_OPCODE_TEXT:  return "TEXT";
-    case CWS_OPCODE_BIN:   return "BIN";
-    case CWS_OPCODE_CLOSE: return "CLOSE";
-    case CWS_OPCODE_PING:  return "PING";
-    case CWS_OPCODE_PONG:  return "PONG";
+    case OPCODE_CONT:  return "CONT";
+    case OPCODE_TEXT:  return "TEXT";
+    case OPCODE_BIN:   return "BIN";
+    case OPCODE_CLOSE: return "CLOSE";
+    case OPCODE_PING:  return "PING";
+    case OPCODE_PONG:  return "PONG";
     default:
         if (0x3 <= opcode && opcode <= 0x7) {
             return string::tformat("NONCONTROL(0x%X)", opcode & 0xF);
@@ -62,8 +60,8 @@ struct Cws_Frame {
 }
 
 distinct Cws_Message_Kind = char;
-const Cws_Message_Kind CWS_MESSAGE_TEXT = (Cws_Message_Kind) CWS_OPCODE_TEXT;
-const Cws_Message_Kind CWS_MESSAGE_BIN  = (Cws_Message_Kind) CWS_OPCODE_BIN;
+const Cws_Message_Kind MESSAGE_TEXT = (Cws_Message_Kind) OPCODE_TEXT;
+const Cws_Message_Kind MESSAGE_BIN  = (Cws_Message_Kind) OPCODE_BIN;
 
 struct Cws_Message_Chunk {
     Cws_Message_Chunk *next;
@@ -84,7 +82,15 @@ fault Cws_Error {
     SERVER_CLOSE_ERROR,
 }
 
-fn void! client_handshake(Socket cws, ZString host)
+module c3ws::cws(<Socket>);
+
+import libc;
+
+struct Cws {
+    Socket socket;
+}
+
+fn void! Cws.client_handshake(cws, ZString host)
 {
     DString handshake;
     // TODO: customizable resource path
@@ -97,7 +103,7 @@ fn void! client_handshake(Socket cws, ZString host)
     handshake.append("Sec-WebSocket-Version: 13\r\n");
     handshake.append("\r\n");
 
-    cws.write(handshake.str_view())!;
+    cws.socket.write(handshake.str_view())!;
 
     // TODO: the server handshake is literally ignored
     // Right now we are making this assumptions:
@@ -105,20 +111,20 @@ fn void! client_handshake(Socket cws, ZString host)
     // 2. Nothing is sent after the handshake so we can distinguish the frames
     // 3. The handshake fits into sizeof(buffer)
     char[1024] buffer;
-    int buffer_size = cws.read(&buffer)!;
+    int buffer_size = cws.socket.read(&buffer)!;
     if (buffer_size < 2 || buffer[buffer_size - 2] != '\r' || buffer[buffer_size - 1] != '\n') {
         return Cws_Error.CLIENT_HANDSHAKE_ERROR?;
     }
 }
 
-fn void! cws_send_frame(Socket cws, bool fin, Cws_Opcode opcode, char[] payload)
+fn void! Cws.send_frame(cws, bool fin, Cws_Opcode opcode, char[] payload)
 {
     // Send FIN and OPCODE
     {
         // NOTE: FIN is always set
         char data = (char) opcode;
         if (fin) data |= (1 << 7);
-        cws.write((&data)[0:1])!;
+        cws.socket.write((&data)[0:1])!;
     }
 
     // Send masked and payload length
@@ -127,17 +133,17 @@ fn void! cws_send_frame(Socket cws, bool fin, Cws_Opcode opcode, char[] payload)
         // NOTE: client frames are always masked
         if (payload.len < 126) {
             char data = (1 << 7) | (char) payload.len;
-            cws.write((&data)[0:1])!;
+            cws.socket.write((&data)[0:1])!;
         } else if (payload.len <= ushort.max) {
             char data = (1 << 7) | 126;
-            cws.write((&data)[0:1])!;
+            cws.socket.write((&data)[0:1])!;
 
             char[2] len = {
                 (char)(payload.len >> (8 * 1)) & 0xFF,
                 (char)(payload.len >> (8 * 0)) & 0xFF
             };
 
-            cws.write(&len)!;
+            cws.socket.write(&len)!;
         } else if (payload.len > ushort.max) {
             char data = (1 << 7) | 127;
             char[8] len = {
@@ -151,8 +157,8 @@ fn void! cws_send_frame(Socket cws, bool fin, Cws_Opcode opcode, char[] payload)
                 (char) (payload.len >> (8 * 0)) & 0xFF
             };
 
-            cws.write((&data)[0:1])!;
-            cws.write(&len)!;
+            cws.socket.write((&data)[0:1])!;
+            cws.socket.write(&len)!;
         }
     }
 
@@ -161,7 +167,7 @@ fn void! cws_send_frame(Socket cws, bool fin, Cws_Opcode opcode, char[] payload)
     // Generate and send mask
     {
         foreach (&byte: mask) *byte = (char)(libc::rand() % 0x100);
-        cws.write(&mask)!;
+        cws.socket.write(&mask)!;
     }
 
     // Mask the payload and send it
@@ -173,17 +179,17 @@ fn void! cws_send_frame(Socket cws, bool fin, Cws_Opcode opcode, char[] payload)
             chunk_size += 1;
             i += 1;
         }
-        cws.write(chunk[0:chunk_size])!;
+        cws.socket.write(chunk[0:chunk_size])!;
     }
 }
 
-fn void! cws_send_message(Socket cws, Cws_Message_Kind kind, char[] payload, uint chunk_len)
+fn void! Cws.send_message(cws, Cws_Message_Kind kind, char[] payload, uint chunk_len)
 {
     bool first = true;
     while (payload.len > 0) {
         uint len = payload.len;
         if (len > chunk_len) len = chunk_len;
-        cws_send_frame(cws, payload.len - len == 0, first ? (Cws_Opcode) kind : CWS_OPCODE_CONT, payload[0:len])!;
+        cws.send_frame(payload.len - len == 0, first ? (Cws_Opcode) kind : c3ws::OPCODE_CONT, payload[0:len])!;
         payload = payload[len..];
         first = false;
     }
@@ -194,12 +200,12 @@ macro char oPCODE(char[2] header)      => ((header)[0] & 0xF);
 macro char mASK(char[2] header)        => ((header)[1] >> 7);
 macro char pAYLOAD_LEN(char[2] header) => ((header)[1] & 0x7F);
 
-fn Cws_Frame*! cws_read_frame(Socket cws)
+fn Cws_Frame*! Cws.read_frame(cws)
 {
     char[2] header;
 
     // Read the header
-    cws.read(&header)!;
+    cws.socket.read(&header)!;
 
     uint payload_len = 0;
 
@@ -210,7 +216,7 @@ fn Cws_Frame*! cws_read_frame(Socket cws)
         switch (len) {
         case 126: {
             char[2] ext_len = {};
-            cws.read(&ext_len)!;
+            cws.socket.read(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 payload_len = (payload_len << 8) | ext_len[i];
@@ -219,7 +225,7 @@ fn Cws_Frame*! cws_read_frame(Socket cws)
         break;
         case 127: {
             char[8] ext_len = {};
-            cws.read(&ext_len)!;
+            cws.socket.read(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 payload_len = (payload_len << 8) | ext_len[i];
@@ -238,7 +244,7 @@ fn Cws_Frame*! cws_read_frame(Socket cws)
         bool masked = (bool) mASK(header);
 
         if (masked) {
-            cws.read(((char*)&mask)[:$sizeof(mask)])!;
+            cws.socket.read(((char*)&mask)[:$sizeof(mask)])!;
         }
     }
 
@@ -251,26 +257,26 @@ fn Cws_Frame*! cws_read_frame(Socket cws)
 
         if (frame.payload.len > 0) {
             // TODO: cws_read_frame does not handle when cws.read didn't read the whole payload
-            cws.read(frame.payload)!;
+            cws.socket.read(frame.payload)!;
         }
 
         return frame;
     }
 }
 
-fn Cws_Message*! cws_read_message(Socket cws)
+fn Cws_Message*! Cws.read_message(cws)
 {
     Cws_Message_Chunk *end = null;
     Cws_Message *message = mem::alloc(Cws_Message);
     message.chunks = null;
 
-    while (try frame = cws_read_frame(cws)) {
-        if (opcode_is_control(frame.opcode)) {
+    while (try frame = cws.read_frame()) {
+        if (c3ws::opcode_is_control(frame.opcode)) {
             switch (frame.opcode) {
-            case CWS_OPCODE_CLOSE:
+            case c3ws::OPCODE_CLOSE:
                 return Cws_Error.SERVER_CLOSE_ERROR?;
-            case CWS_OPCODE_PING:
-                cws_send_frame(cws, true, CWS_OPCODE_PONG, frame.payload)!;
+            case c3ws::OPCODE_PING:
+                cws.send_frame(true, c3ws::OPCODE_PONG, frame.payload)!;
                 break;
             default: {
                 // Ignore any other control frames for now

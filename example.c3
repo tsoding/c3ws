@@ -1,5 +1,6 @@
 module example;
 import c3ws;
+import c3ws::cws;
 import std::io;
 import std::net, std::os, std::time, libc;
 import std::thread;
@@ -20,9 +21,9 @@ fn uint! Socket.write(self, char[] buf) {
     return (uint)libc::write(self, &buf[0], buf.len);
 }
 
-fn void log_frame(Cws_Frame(<Socket>) *frame)
+fn void log_frame(Cws_Frame *frame)
 {
-    io::printfn("opcode:      %s", c3ws::opcode_name(<Socket>)(frame.opcode));
+    io::printfn("opcode:      %s", c3ws::opcode_name(frame.opcode));
     io::printfn("payload_len: %d", frame.payload.len);
     io::printfn("payload:     ");
     for (usz i = 0; i < frame.payload.len; ++i) {
@@ -31,10 +32,10 @@ fn void log_frame(Cws_Frame(<Socket>) *frame)
     io::printfn("");
 }
 
-fn void log_message(Cws_Message(<Socket>) *message)
+fn void log_message(Cws_Message *message)
 {
-    io::printf("message kind: %s\n", c3ws::opcode_name(<Socket>)((Cws_Opcode(<Socket>)) message.kind));
-    for (Cws_Message_Chunk(<Socket>) *iter = message.chunks; iter != null; iter = iter.next) {
+    io::printf("message kind: %s\n", c3ws::opcode_name((Cws_Opcode) message.kind));
+    for (Cws_Message_Chunk *iter = message.chunks; iter != null; iter = iter.next) {
         io::printf("chunk_payload_len: %d\n", iter.payload.len);
         for (usz i = 0; i < iter.payload.len; ++i) {
             io::printf("0x%02X ", iter.payload[i]);
@@ -80,25 +81,29 @@ fn int main()
         }
 
         if (sd == -1) {
-            io::printf("Could not connect to %s:%s", HOST, SERVICE);
+            io::printf("Could not connect to %s:%s\n", HOST, SERVICE);
             return 1;
         }
     }
 
+    Cws(<Socket>) cws = {
+        .socket = sd,
+    };
+
     // WebSocket handshake with the server
-    c3ws::client_handshake(<Socket>)(sd, HOST)!!;
+    cws.client_handshake(HOST)!!;
 
     // Receiving frames
     {
         char[] payload = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
-        Cws_Message_Kind(<Socket>) kind = c3ws::CWS_MESSAGE_BIN(<Socket>);
+        Cws_Message_Kind kind = c3ws::MESSAGE_BIN;
         uint chunk_size = 100;
 
-        c3ws::cws_send_message(<Socket>)(sd, kind, payload, chunk_size)!!;
-        while (try message = c3ws::cws_read_message(<Socket>)(sd)) {
+        cws.send_message(kind, payload, chunk_size)!!;
+        while (try message = cws.read_message()) {
             log_message(message);
             thread::sleep(1*time::SEC);
-            c3ws::cws_send_message(<Socket>)(sd, kind, payload, chunk_size)!!;
+            cws.send_message(kind, payload, chunk_size)!!;
         }
     }
 
