@@ -86,7 +86,7 @@ fn int main()
         }
     }
 
-    Ws(<Socket>) ws = {
+    Ws(<Socket, 100>) ws = {
         .socket = sd,
     };
 
@@ -96,17 +96,16 @@ fn int main()
     // Receiving frames
     {
         char[] payload = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
-        Ws_Message_Kind kind = c3ws::MESSAGE_BIN;
-        uint chunk_size = 100;
 
-        ws.send_message(kind, payload, chunk_size)!!;
+        ws.send_binary(kind, payload)!!;
         while (try message = ws.read_message()) {
             log_message(message);
             thread::sleep(1*time::SEC);
-            ws.send_message(kind, payload, chunk_size)!!;
+            ws.send_binary(kind, payload)!!;
         }
     }
 
+    // TODO: use defer everywhere it’s needed
     libc::close(sd);
 
     return 0;

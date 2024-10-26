@@ -82,7 +82,7 @@ fault Ws_Error {
     SERVER_CLOSE_ERROR,
 }
 
-module c3ws::ws(<Socket>);
+module c3ws::ws(<Socket, CHUNK_SIZE>);
 
 import libc;
 
@@ -195,6 +195,16 @@ fn void! Ws.send_message(ws, Ws_Message_Kind kind, char[] payload, uint chunk_le
     }
 }
 
+fn void! Ws.send_text(ws, String text)
+{
+    return ws.send_message(c3ws::MESSAGE_TEXT, text, CHUNK_SIZE);
+}
+
+fn void! Ws.send_binary(ws, char[] binary)
+{
+    return ws.send_message(c3ws::MESSAGE_BIN, binary, CHUNK_SIZE);
+}
+
 macro char fIN(char[2] header)         => ((header)[0] >> 7);
 macro char oPCODE(char[2] header)      => ((header)[0] & 0xF);
 macro char mASK(char[2] header)        => ((header)[1] >> 7);
@@ -304,3 +314,4 @@ fn Ws_Message*! Ws.read_message(ws)
 
     return message;
 }
+
