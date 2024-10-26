@@ -1,6 +1,5 @@
 module example;
 import c3ws;
-import c3ws::ws;
 import std::io;
 import std::net, std::os, std::time, libc;
 import std::thread;
@@ -21,27 +20,13 @@ fn uint! Socket.write(self, char[] buf) {
     return (uint)libc::write(self, &buf[0], buf.len);
 }
 
-fn void log_frame(Ws_Frame *frame)
+fn void log_message(char[] message)
 {
-    io::printfn("opcode:      %s", c3ws::opcode_name(frame.opcode));
-    io::printfn("payload_len: %d", frame.payload.len);
-    io::printfn("payload:     ");
-    for (usz i = 0; i < frame.payload.len; ++i) {
-        io::printf("0x%02X ", frame.payload[i]);
+    io::printf("message: ");
+    foreach (x: message) {
+        io::printf("0x%02X ", x);
     }
-    io::printfn("");
-}
-
-fn void log_message(Ws_Message *message)
-{
-    io::printf("message kind: %s\n", c3ws::opcode_name((Ws_Opcode) message.kind));
-    for (Ws_Message_Chunk *iter = message.chunks; iter != null; iter = iter.next) {
-        io::printf("chunk_payload_len: %d\n", iter.payload.len);
-        for (usz i = 0; i < iter.payload.len; ++i) {
-            io::printf("0x%02X ", iter.payload[i]);
-        }
-        io::printf("\n");
-    }
+    io::printf("\n");
     io::printf("------------------------------\n");
 }
 
@@ -97,11 +82,12 @@ fn int main()
     {
         char[] payload = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
 
-        ws.send_binary(kind, payload)!!;
-        while (try message = ws.read_message()) {
+        // TODO: allocate all the memory in the temporary allocator
+        ws.send_binary(payload)!!;
+        while (try message = ws.read()) {
             log_message(message);
             thread::sleep(1*time::SEC);
-            ws.send_binary(kind, payload)!!;
+            ws.send_binary(payload)!!;
         }
     }
 

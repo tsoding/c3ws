@@ -18,7 +18,9 @@
 // LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-module c3ws;
+module c3ws(<Socket, CHUNK_SIZE>);
+
+import libc;
 
 distinct Ws_Opcode = char;
 const Ws_Opcode OPCODE_CONT  = 0x0;
@@ -81,10 +83,6 @@ fault Ws_Error {
     // Server sent CLOSE frame during Ws.read_message()
     SERVER_CLOSE_ERROR,
 }
-
-module c3ws::ws(<Socket, CHUNK_SIZE>);
-
-import libc;
 
 struct Ws {
     Socket socket;
@@ -166,6 +164,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
 
     // Generate and send mask
     {
+        // TODO: use the rand from the standard library
         foreach (&byte: mask) *byte = (char)(libc::rand() % 0x100);
         ws.socket.write(&mask)!;
     }
@@ -189,7 +188,7 @@ fn void! Ws.send_message(ws, Ws_Message_Kind kind, char[] payload, uint chunk_le
     while (payload.len > 0) {
         uint len = payload.len;
         if (len > chunk_len) len = chunk_len;
-        ws.send_frame(payload.len - len == 0, first ? (Ws_Opcode) kind : c3ws::OPCODE_CONT, payload[0:len])!;
+        ws.send_frame(payload.len - len == 0, first ? (Ws_Opcode) kind : OPCODE_CONT, payload[0:len])!;
         payload = payload[len..];
         first = false;
     }
@@ -197,12 +196,12 @@ fn void! Ws.send_message(ws, Ws_Message_Kind kind, char[] payload, uint chunk_le
 
 fn void! Ws.send_text(ws, String text)
 {
-    return ws.send_message(c3ws::MESSAGE_TEXT, text, CHUNK_SIZE);
+    return ws.send_message(MESSAGE_TEXT, text, CHUNK_SIZE);
 }
 
 fn void! Ws.send_binary(ws, char[] binary)
 {
-    return ws.send_message(c3ws::MESSAGE_BIN, binary, CHUNK_SIZE);
+    return ws.send_message(MESSAGE_BIN, binary, CHUNK_SIZE);
 }
 
 macro char fIN(char[2] header)         => ((header)[0] >> 7);
@@ -281,12 +280,12 @@ fn Ws_Message*! Ws.read_message(ws)
     message.chunks = null;
 
     while (try frame = ws.read_frame()) {
-        if (c3ws::opcode_is_control(frame.opcode)) {
+        if (opcode_is_control(frame.opcode)) {
             switch (frame.opcode) {
-            case c3ws::OPCODE_CLOSE:
+            case OPCODE_CLOSE:
                 return Ws_Error.SERVER_CLOSE_ERROR?;
-            case c3ws::OPCODE_PING:
-                ws.send_frame(true, c3ws::OPCODE_PONG, frame.payload)!;
+            case OPCODE_PING:
+                ws.send_frame(true, OPCODE_PONG, frame.payload)!;
                 break;
             default: {
                 // Ignore any other control frames for now
@@ -315,3 +314,12 @@ fn Ws_Message*! Ws.read_message(ws)
     return message;
 }
 
+fn char[]! Ws.read(ws)
+{
+    Ws_Message* message = ws.read_message()!;
+    DString payload;
+    for (Ws_Message_Chunk *iter = message.chunks; iter != null; iter = iter.next) {
+        payload.append(iter.payload);
+    }
+    return payload.copy_str();
+}
