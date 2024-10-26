@@ -91,6 +91,7 @@ struct Ws {
 fn void! Ws.client_handshake(ws, ZString host)
 {
     DString handshake;
+    handshake.new_init(1024, allocator::temp());
     // TODO: customizable resource path
     handshake.append("GET / HTTP/1.1\r\n");
     handshake.appendf("Host: %s\r\n", host);
@@ -259,10 +260,10 @@ fn Ws_Frame*! Ws.read_frame(ws)
 
     // Read the payload
     {
-        Ws_Frame *frame = mem::new(Ws_Frame);
+        Ws_Frame *frame = mem::temp_new(Ws_Frame);
         frame.fin = (bool) fIN(header);
         frame.opcode = (Ws_Opcode) oPCODE(header);
-        frame.payload = mem::new_array(char, payload_len);
+        frame.payload = mem::temp_new_array(char, payload_len);
 
         if (frame.payload.len > 0) {
             // TODO: ws.read_frame does not handle when ws.read didn't read the whole payload
@@ -276,7 +277,7 @@ fn Ws_Frame*! Ws.read_frame(ws)
 fn Ws_Message*! Ws.read_message(ws)
 {
     Ws_Message_Chunk *end = null;
-    Ws_Message *message = mem::alloc(Ws_Message);
+    Ws_Message *message = mem::temp_alloc(Ws_Message);
     message.chunks = null;
 
     while (try frame = ws.read_frame()) {
@@ -295,13 +296,13 @@ fn Ws_Message*! Ws.read_message(ws)
             // TODO: ws.read_message does not verify that the message starts with non CONT frame (does it have to start with non-CONT frame)?
             // TODO: ws.read_message does not verify that any non-fin "continuation" frames have the CONT opcode
             if (end == null) {
-                end = mem::alloc(Ws_Message_Chunk);
+                end = mem::temp_alloc(Ws_Message_Chunk);
                 end.next = null;
                 end.payload = frame.payload;
                 message.chunks = end;
                 message.kind = (Ws_Message_Kind) frame.opcode;
             } else {
-                end.next = mem::alloc(Ws_Message_Chunk);
+                end.next = mem::temp_alloc(Ws_Message_Chunk);
                 end.next.next = null;
                 end.next.payload = frame.payload;
                 end = end.next;
@@ -318,8 +319,9 @@ fn char[]! Ws.read(ws)
 {
     Ws_Message* message = ws.read_message()!;
     DString payload;
+    payload.new_init(1024, allocator::temp());
     for (Ws_Message_Chunk *iter = message.chunks; iter != null; iter = iter.next) {
         payload.append(iter.payload);
     }
-    return payload.copy_str();
+    return payload.tcopy_str();
 }
