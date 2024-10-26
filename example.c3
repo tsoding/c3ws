@@ -10,19 +10,20 @@ import std::thread;
 // #define SERVICE "80"
 const String HOST = "localhost";
 const uint PORT = 6970;
+// TODO: custom WebSocket Echo server
+// TODO: run on https://github.com/crossbario/autobahn-testsuite
 
 fn void log_message(char[] message)
 {
     io::printf("message: ");
-    foreach (x: message) {
-        io::printf("0x%02X ", x);
-    }
+    foreach (x: message) io::printf("0x%02X ", x);
     io::printf("\n");
     io::printf("------------------------------\n");
 }
 
 fn int main()
 {
+    // TODO: implement SSL connection
     // TODO: move establishing plain and SSL connection to c3ws
 
     Ws(<TcpSocket, 100>) ws = {

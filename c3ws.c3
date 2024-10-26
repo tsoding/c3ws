@@ -88,7 +88,9 @@ struct Ws {
     Socket socket;
 }
 
-fn void! Ws.client_handshake(ws, ZString host)
+// https://datatracker.ietf.org/doc/html/rfc6455#section-1.3
+// TODO: Ws.client_handshake should accept a URL
+fn void! Ws.client_handshake(ws, String host)
 {
     DString handshake;
     handshake.new_init(1024, allocator::temp());
