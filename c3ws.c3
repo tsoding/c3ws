@@ -110,7 +110,7 @@ fn void! Ws.client_handshake(ws, ZString host)
     // 2. Nothing is sent after the handshake so we can distinguish the frames
     // 3. The handshake fits into sizeof(buffer)
     char[1024] buffer;
-    int buffer_size = ws.socket.read(&buffer)!;
+    usz buffer_size = ws.socket.read(&buffer)!;
     if (buffer_size < 2 || buffer[buffer_size - 2] != '\r' || buffer[buffer_size - 1] != '\n') {
         return Ws_Error.CLIENT_HANDSHAKE_ERROR?;
     }
