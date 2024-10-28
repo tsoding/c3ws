@@ -21,6 +21,9 @@
 module c3ws(<Socket, CHUNK_SIZE>);
 
 import libc;
+import std::io;
+import std::hash::sha1;
+import std::encoding::base64;
 
 distinct Ws_Opcode = char;
 const Ws_Opcode OPCODE_CONT  = 0x0;
@@ -78,6 +81,9 @@ struct Ws_Message {
 fault Ws_Error {
     // Ws.client_handshake() has failed
     CLIENT_HANDSHAKE_ERROR,
+    // Ws.server_handshake() has failed
+    SERVER_HANDSHAKE_BAD_REQUEST,
+    SERVER_HANDSHAKE_NO_KEY,
     // Socket.read or Socket.write have failed
     SOCKET_ERROR,
     // Server sent CLOSE frame during Ws.read_message()
@@ -86,6 +92,42 @@ fault Ws_Error {
 
 struct Ws {
     Socket socket;
+}
+
+// TODO: verify the request status line
+// TODO: verify the rest of the headers of the request
+// Right now we are only looking for Sec-WebSocket-Key
+fn String! parse_sec_websocket_key_from_request(String request)
+{
+    foreach (header: request.tsplit("\r\n")[1..]) {
+        if (header.len == 0) break;
+        String[] header_parts = header.tsplit(":", 2);
+        if (header_parts.len < 2) return Ws_Error.SERVER_HANDSHAKE_BAD_REQUEST?;
+        String key = header_parts[0].trim();
+        String value = header_parts[1].trim();
+
+        if (key == "Sec-WebSocket-Key") {
+            return value;
+        }
+    }
+    return Ws_Error.SERVER_HANDSHAKE_NO_KEY?;
+}
+
+fn void! Ws.server_handshake(ws)
+{
+    char[1024] buffer;
+    usz buffer_size = ws.socket.read(&buffer)!;
+    String request = (String)buffer[0:buffer_size];
+    String sec_websocket_key = parse_sec_websocket_key_from_request(request)!;
+
+    DString handshake;
+    handshake.new_init(1024, allocator::temp());
+    handshake.append("HTTP/1.1 101 Switching Protocols\r\n");
+    handshake.append("Upgrade: websocket\r\n");
+    handshake.append("Connection: Upgrade\r\n");
+    handshake.appendf("Sec-WebSocket-Accept: %s\r\n", compute_sec_websocket_accept(sec_websocket_key));
+    handshake.append("\r\n");
+    ws.socket.write(handshake.str_view())!;
 }
 
 // https://datatracker.ietf.org/doc/html/rfc6455#section-1.3
@@ -113,7 +155,9 @@ fn void! Ws.client_handshake(ws, String host)
     // 3. The handshake fits into sizeof(buffer)
     char[1024] buffer;
     usz buffer_size = ws.socket.read(&buffer)!;
-    if (buffer_size < 2 || buffer[buffer_size - 2] != '\r' || buffer[buffer_size - 1] != '\n') {
+    String response = (String)buffer[0:buffer_size];
+    io::printfn("Server response: %s", response);
+    if (!response.ends_with("\r\n")) {
         return Ws_Error.CLIENT_HANDSHAKE_ERROR?;
     }
 }
@@ -326,4 +370,15 @@ fn char[]! Ws.read(ws)
         payload.append(iter.payload);
     }
     return payload.tcopy_str();
+}
+
+
+fn String compute_sec_websocket_accept(String sec_websocket_key)
+{
+    char[sha1::HASH_BYTES] src = sha1::hash(string::tformat("%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11", sec_websocket_key));
+    Base64Encoder encoder;
+    encoder.init(base64::STD_ALPHABET)!!;
+    char[] dst = mem::temp_new_array(char, encoder.encode_len(src.len));
+    encoder.encode(&src, dst)!!;
+    return (String)dst;
 }
