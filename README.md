@@ -20,3 +20,8 @@ In another terminal
 ```console
 $ ./example_client "Hello, World"
 ```
+
+You can also connect to the server from a browser:
+```console
+$ firefox ./example_client.html
+```
