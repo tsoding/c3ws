@@ -20,6 +20,8 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 module c3ws(<Socket, CHUNK_SIZE>);
 
+// TODO: run on https://github.com/crossbario/autobahn-testsuite
+
 import libc;
 import std::io;
 import std::hash::sha1;
@@ -454,6 +456,7 @@ fn Ws_Message*! Ws.read_message(ws)
     return message;
 }
 
+// TODO: Ws.read() does not report what kind of message we received: TEXT or BIN
 fn char[]! Ws.read(ws)
 {
     Ws_Message* message = ws.read_message()!;

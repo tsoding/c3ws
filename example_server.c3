@@ -12,16 +12,20 @@ fn void main() {
         defer allocator::temp().reset(temp_mark);
 
         io::printfn("Accepted connection");
-        Ws(<TcpSocket, 100>) ws = {
-            .socket = client,
-        };
+        Ws(<TcpSocket, 100>) ws = { .socket = client };
         defer ws.socket.close()!!;
 
         if (catch error = ws.server_handshake()) {
             io::printfn("ERROR: handshake failed: %s", error);
             continue;
         }
-        if (catch error = ws.send_text("Hello, World")) {
+        char[]! message = ws.read();
+        if (catch error = message) {
+            io::printfn("ERROR: could not read message from client: %s", error);
+            continue;
+        }
+        io::printfn("INFO: Client sent: %s", (String)message);
+        if (catch error = ws.send_text((String)message)) {
             io::printfn("ERROR: send text failed: %s", error);
             continue;
         }
