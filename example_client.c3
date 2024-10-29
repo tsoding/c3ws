@@ -14,8 +14,7 @@ macro @shift(&xs) {
 
 fn int main(String[] args)
 {
-    // TODO: implement SSL connection
-    // TODO: move establishing plain and SSL connection to c3ws
+    // TODO: implement SSL connection example
 
     String program_name = @shift(args);
     if (args.len == 0) {
