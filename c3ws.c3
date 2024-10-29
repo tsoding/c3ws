@@ -24,6 +24,28 @@ import libc;
 import std::io;
 import std::hash::sha1;
 import std::encoding::base64;
+import std::net::os;
+
+fn void! Socket.read_entire_buffer(&self, char[] buffer) {
+    while (buffer.len > 0) {
+        usz n = self.read(buffer)!;
+        buffer = buffer[n..];
+    }
+}
+
+// TODO: move Socket.peek into the std and make a PR to c3 maybe?
+fn usz! Socket.peek(&self, char[] bytes) @dynamic
+{
+$if env::WIN32:
+    $error("Win32 is not support yet");
+    isz n = libc::recv(self.sock, bytes.ptr, (int)bytes.len, MSG_PEEK);
+$else
+    const int MSG_PEEK = 2;
+    isz n = libc::recv(self.sock, bytes.ptr, bytes.len, MSG_PEEK);
+$endif
+    if (n < 0) return os::socket_error()?;
+    return (usz)n;
+}
 
 distinct Ws_Opcode = char;
 const Ws_Opcode OPCODE_CONT  = 0x0;
@@ -80,10 +102,14 @@ struct Ws_Message {
 
 fault Ws_Error {
     // Ws.client_handshake() has failed
-    CLIENT_HANDSHAKE_ERROR,
+    CLIENT_HANDSHAKE_BAD_RESPONSE,
+    CLIENT_HANDSHAKE_NO_ACCEPT,
+    CLIENT_HANDSHAKE_DUPLICATE_ACCEPT,
+    CLIENT_HANDSHAKE_BAD_ACCEPT,
     // Ws.server_handshake() has failed
     SERVER_HANDSHAKE_BAD_REQUEST,
     SERVER_HANDSHAKE_NO_KEY,
+    SERVER_HANDSHAKE_DUPLICATE_KEY,
     // Socket.read or Socket.write have failed
     SOCKET_ERROR,
     // Server sent CLOSE frame during Ws.read_message()
@@ -94,31 +120,102 @@ struct Ws {
     Socket socket;
 }
 
-// TODO: verify the request status line
-// TODO: verify the rest of the headers of the request
-// Right now we are only looking for Sec-WebSocket-Key
-fn String! parse_sec_websocket_key_from_request(String request)
-{
-    foreach (header: request.tsplit("\r\n")[1..]) {
-        if (header.len == 0) break;
-        String[] header_parts = header.tsplit(":", 2);
-        if (header_parts.len < 2) return Ws_Error.SERVER_HANDSHAKE_BAD_REQUEST?;
-        String key = header_parts[0].trim();
-        String value = header_parts[1].trim();
+fn String! parse_sec_websocket_accept_from_response(String *response) {
+    bool found_sec_websocket_accept = false;
+    String sec_websocket_accept;
+    const String LINE_SEP = "\r\n";
+    const String HEADER_SEP = ":";
 
-        if (key == "Sec-WebSocket-Key") {
-            return value;
+    // TODO: verify the response status line
+    if (try index = response.index_of(LINE_SEP)) {
+        (*response) = (*response)[index+LINE_SEP.len..];
+    } else {
+        return Ws_Error.CLIENT_HANDSHAKE_BAD_RESPONSE?;
+    }
+
+    // TODO: verify the rest of the headers of the response
+    // Right now we are only looking for Sec-WebSocket-Accept
+    while(response.len > 0 && !response.starts_with(LINE_SEP)) {
+        String header;
+        if (try index = response.index_of(LINE_SEP)) {
+            header = (*response)[0:index];
+            (*response) = (*response)[index+LINE_SEP.len..];
+        } else {
+            return Ws_Error.CLIENT_HANDSHAKE_BAD_RESPONSE?;
+        }
+
+        String key, value;
+        if (try index = header.index_of(HEADER_SEP)) {
+            key = header[0:index].trim();
+            value = header[index+HEADER_SEP.len..].trim();
+        } else {
+            return Ws_Error.CLIENT_HANDSHAKE_BAD_RESPONSE?;
+        }
+
+        if (key == "Sec-WebSocket-Accept") {
+            if (found_sec_websocket_accept) return Ws_Error.CLIENT_HANDSHAKE_DUPLICATE_ACCEPT?;
+            sec_websocket_accept = value;
+            found_sec_websocket_accept = true;
         }
     }
-    return Ws_Error.SERVER_HANDSHAKE_NO_KEY?;
+    if (!response.starts_with(LINE_SEP)) return Ws_Error.CLIENT_HANDSHAKE_BAD_RESPONSE?;
+    (*response) = (*response)[LINE_SEP.len..];
+    if (!found_sec_websocket_accept) return Ws_Error.CLIENT_HANDSHAKE_NO_ACCEPT?;
+    return sec_websocket_accept;
+}
+
+fn String! parse_sec_websocket_key_from_request(String *request) {
+    bool found_sec_websocket_key = false;
+    String sec_websocket_key;
+    const String LINE_SEP = "\r\n";
+    const String HEADER_SEP = ":";
+
+    // TODO: verify the request status line
+    if (try index = request.index_of(LINE_SEP)) {
+        (*request) = (*request)[index+LINE_SEP.len..];
+    } else {
+        return Ws_Error.SERVER_HANDSHAKE_BAD_REQUEST?;
+    }
+
+    // TODO: verify the rest of the headers of the request
+    // Right now we are only looking for Sec-WebSocket-Key
+    while(request.len > 0 && !request.starts_with(LINE_SEP)) {
+        String header;
+        if (try index = request.index_of(LINE_SEP)) {
+            header = (*request)[0:index];
+            (*request) = (*request)[index+LINE_SEP.len..];
+        } else {
+            return Ws_Error.SERVER_HANDSHAKE_BAD_REQUEST?;
+        }
+
+        String key, value;
+        if (try index = header.index_of(HEADER_SEP)) {
+            key = header[0:index].trim();
+            value = header[index+HEADER_SEP.len..].trim();
+        } else {
+            return Ws_Error.SERVER_HANDSHAKE_BAD_REQUEST?;
+        }
+
+        if (key == "Sec-WebSocket-Key") {
+            if (found_sec_websocket_key) return Ws_Error.SERVER_HANDSHAKE_DUPLICATE_KEY?;
+            sec_websocket_key = value;
+            found_sec_websocket_key = true;
+        }
+    }
+    if (!request.starts_with(LINE_SEP)) return Ws_Error.SERVER_HANDSHAKE_BAD_REQUEST?;
+    (*request) = (*request)[LINE_SEP.len..];
+    if (!found_sec_websocket_key) return Ws_Error.SERVER_HANDSHAKE_NO_KEY?;
+    return sec_websocket_key;
 }
 
 fn void! Ws.server_handshake(ws)
 {
+    // TODO: Ws.server_handshake assumes that request fits into 1024 bytes
     char[1024] buffer;
-    usz buffer_size = ws.socket.read(&buffer)!;
+    usz buffer_size = ws.socket.peek(&buffer)!;
     String request = (String)buffer[0:buffer_size];
-    String sec_websocket_key = parse_sec_websocket_key_from_request(request)!;
+    String sec_websocket_key = parse_sec_websocket_key_from_request(&request)!;
+    ws.socket.read(buffer[0:buffer_size - request.len])!;
 
     DString handshake;
     handshake.new_init(1024, allocator::temp());
@@ -148,18 +245,13 @@ fn void! Ws.client_handshake(ws, String host)
 
     ws.socket.write(handshake.str_view())!;
 
-    // TODO: the server handshake is literally ignored
-    // Right now we are making this assumptions:
-    // 1. The server sent the successful handshake
-    // 2. Nothing is sent after the handshake so we can distinguish the frames
-    // 3. The handshake fits into sizeof(buffer)
+    // TODO: Ws.client_handshake assumes that response fits into 1024 bytes
     char[1024] buffer;
-    usz buffer_size = ws.socket.read(&buffer)!;
+    usz buffer_size = ws.socket.peek(&buffer)!;
     String response = (String)buffer[0:buffer_size];
-    io::printfn("Server response: %s", response);
-    if (!response.ends_with("\r\n")) {
-        return Ws_Error.CLIENT_HANDSHAKE_ERROR?;
-    }
+    String sec_websocket_accept = parse_sec_websocket_accept_from_response(&response)!;
+    ws.socket.read(buffer[0:buffer_size - response.len])!;
+    if (sec_websocket_accept != "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") return Ws_Error.CLIENT_HANDSHAKE_BAD_ACCEPT?;
 }
 
 fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
@@ -261,7 +353,7 @@ fn Ws_Frame*! Ws.read_frame(ws)
     char[2] header;
 
     // Read the header
-    ws.socket.read(&header)!;
+    ws.socket.read_entire_buffer(&header)!;
 
     uint payload_len = 0;
 
@@ -272,7 +364,7 @@ fn Ws_Frame*! Ws.read_frame(ws)
         switch (len) {
         case 126: {
             char[2] ext_len = {};
-            ws.socket.read(&ext_len)!;
+            ws.socket.read_entire_buffer(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 payload_len = (payload_len << 8) | ext_len[i];
@@ -281,7 +373,7 @@ fn Ws_Frame*! Ws.read_frame(ws)
         break;
         case 127: {
             char[8] ext_len = {};
-            ws.socket.read(&ext_len)!;
+            ws.socket.read_entire_buffer(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 payload_len = (payload_len << 8) | ext_len[i];
@@ -295,13 +387,10 @@ fn Ws_Frame*! Ws.read_frame(ws)
 
     // Read the mask
     // TODO: the server may not send masked frames
-    {
-        uint mask = 0;
-        bool masked = (bool) mASK(header);
-
-        if (masked) {
-            ws.socket.read(((char*)&mask)[:$sizeof(mask)])!;
-        }
+    char[4] mask;
+    bool masked = (bool) mASK(header);
+    if (masked) {
+        ws.socket.read_entire_buffer(&mask)!;
     }
 
     // Read the payload
@@ -312,8 +401,12 @@ fn Ws_Frame*! Ws.read_frame(ws)
         frame.payload = mem::temp_new_array(char, payload_len);
 
         if (frame.payload.len > 0) {
-            // TODO: ws.read_frame does not handle when ws.read didn't read the whole payload
-            ws.socket.read(frame.payload)!;
+            ws.socket.read_entire_buffer(frame.payload)!;
+            if (masked) {
+                foreach (i, &x: frame.payload) {
+                    *x ^= mask[i % 4];
+                }
+            }
         }
 
         return frame;
