@@ -20,7 +20,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 module c3ws(<Socket, CLIENT, CHUNK_SIZE>);
 
-// TODO: run on https://github.com/crossbario/autobahn-testsuite
+// TODO: run autobahn testsuit on CI and deploy reports to github pages
 
 import libc;
 import std::io;
