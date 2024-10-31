@@ -5,7 +5,7 @@
     </head>
     <body>
         <p>Start the <code>example_server</code> and send some text to it via this field:</p>
-        <input id="message" onkeydown="if (event.keyCode === 13) sendMessage()"></input>
+        <input id="message" onkeydown="if (event.keyCode === 13) sendMessage()" autofocus></input>
         <button onclick="sendMessage()">Send</button>
         <p id=response></p>
         <script>
