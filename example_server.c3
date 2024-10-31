@@ -33,13 +33,13 @@ fn void main() {
             io::printfn("ERROR: handshake failed: %s", error);
             continue;
         }
-        char[]! message = ws.read();
+        Ws_Message(<TcpSocket, false, CHUNK_SIZE>)! message = ws.read_message();
         if (catch error = message) {
             io::printfn("ERROR: could not read message from client: %s", error);
             continue;
         }
-        io::printfn("INFO: Client sent: %d bytes", message.len);
-        if (catch error = ws.send_text((String)message)) {
+        io::printfn("INFO: Client sent: %d bytes", message.payload.len);
+        if (catch error = ws.send_message(message.kind, message.payload)) {
             io::printfn("ERROR: send text failed: %s", error);
             continue;
         }

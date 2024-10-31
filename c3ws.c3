@@ -92,14 +92,9 @@ distinct Ws_Message_Kind = char;
 const Ws_Message_Kind MESSAGE_TEXT = (Ws_Message_Kind) OPCODE_TEXT;
 const Ws_Message_Kind MESSAGE_BIN  = (Ws_Message_Kind) OPCODE_BIN;
 
-struct Ws_Message_Chunk {
-    Ws_Message_Chunk *next;
-    char[] payload;
-}
-
 struct Ws_Message {
     Ws_Message_Kind kind;
-    Ws_Message_Chunk *chunks;
+    char[] payload;
 }
 
 fault Ws_Error {
@@ -330,12 +325,12 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
     }
 }
 
-fn void! Ws.send_message(ws, Ws_Message_Kind kind, char[] payload, uint chunk_len)
+fn void! Ws.send_message(ws, Ws_Message_Kind kind, char[] payload)
 {
     bool first = true;
     do {
         uint len = payload.len;
-        if (len > chunk_len) len = chunk_len;
+        if (len > CHUNK_SIZE) len = CHUNK_SIZE;
         bool fin = payload.len - len == 0;
         Ws_Opcode opcode = first ? (Ws_Opcode) kind : OPCODE_CONT;
 
@@ -347,12 +342,12 @@ fn void! Ws.send_message(ws, Ws_Message_Kind kind, char[] payload, uint chunk_le
 
 fn void! Ws.send_text(ws, String text)
 {
-    return ws.send_message(MESSAGE_TEXT, text, CHUNK_SIZE);
+    return ws.send_message(MESSAGE_TEXT, text);
 }
 
 fn void! Ws.send_binary(ws, char[] binary)
 {
-    return ws.send_message(MESSAGE_BIN, binary, CHUNK_SIZE);
+    return ws.send_message(MESSAGE_BIN, binary);
 }
 
 macro char fIN(char[2] header)         => ((header)[0] >> 7);
@@ -423,11 +418,11 @@ fn Ws_Frame*! Ws.read_frame(ws)
     }
 }
 
-fn Ws_Message*! Ws.read_message(ws)
+fn Ws_Message! Ws.read_message(ws)
 {
-    Ws_Message_Chunk *end = null;
-    Ws_Message *message = mem::temp_alloc(Ws_Message);
-    message.chunks = null;
+    Ws_Message message;
+    DString payload;
+    payload.new_init(1024, allocator::temp());
 
     while (try frame = ws.read_frame()) {
         if (opcode_is_control(frame.opcode)) {
@@ -444,38 +439,16 @@ fn Ws_Message*! Ws.read_message(ws)
         } else {
             // TODO: ws.read_message does not verify that the message starts with non CONT frame (does it have to start with non-CONT frame)?
             // TODO: ws.read_message does not verify that any non-fin "continuation" frames have the CONT opcode
-            if (end == null) {
-                end = mem::temp_alloc(Ws_Message_Chunk);
-                end.next = null;
-                end.payload = frame.payload;
-                message.chunks = end;
-                message.kind = (Ws_Message_Kind) frame.opcode;
-            } else {
-                end.next = mem::temp_alloc(Ws_Message_Chunk);
-                end.next.next = null;
-                end.next.payload = frame.payload;
-                end = end.next;
-            }
-
+            if (payload.len() == 0) message.kind = (Ws_Message_Kind) frame.opcode;
+            payload.append(frame.payload);
             if (frame.fin) break;
         }
     }
 
+    message.payload = payload.str_view();
+
     return message;
 }
-
-// TODO: Ws.read() does not report what kind of message we received: TEXT or BIN
-fn char[]! Ws.read(ws)
-{
-    Ws_Message* message = ws.read_message()!;
-    DString payload;
-    payload.new_init(1024, allocator::temp());
-    for (Ws_Message_Chunk *iter = message.chunks; iter != null; iter = iter.next) {
-        payload.append(iter.payload);
-    }
-    return payload.tcopy_str();
-}
-
 
 fn String compute_sec_websocket_accept(String sec_websocket_key)
 {

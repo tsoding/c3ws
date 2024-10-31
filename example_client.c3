@@ -29,7 +29,7 @@ fn int main(String[] args)
     defer ws.socket.close()!!;
     ws.client_handshake(config::HOST)!!;
     ws.send_text(message)!!;
-    io::printfn("Message from server: %s", (String)ws.read()!!);
+    io::printfn("Message from server: %s", (String)ws.read_message()!!.payload);
 
     return 0;
 }
