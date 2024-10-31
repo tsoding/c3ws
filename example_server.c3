@@ -1,16 +1,19 @@
 module example::server;
 import c3ws;
+import c3ws::ws;
 import std::io;
 import std::net::tcp;
 import example::config;
 import libc;
 
+// TODO: consider submitting this definitions as a PR to c3c
 const SignalFunction SIG_IGN = (SignalFunction)0x1;
 const SignalFunction SIG_DFL = (SignalFunction)0x0;
 
 const int CHUNK_SIZE = 1024;
 
 fn void main() {
+    // TODO: exclude this code on Windows
     Sigaction act = {};
     act.sa_handler = SIG_IGN;
     libc::sigaction(libc::SIGPIPE, &act, null);
@@ -33,7 +36,7 @@ fn void main() {
             io::printfn("ERROR: handshake failed: %s", error);
             continue;
         }
-        Ws_Message(<TcpSocket, false, CHUNK_SIZE>)! message = ws.read_message();
+        Ws_Message! message = ws.read_message();
         if (catch error = message) {
             io::printfn("ERROR: could not read message from client: %s", error);
             continue;
@@ -43,7 +46,7 @@ fn void main() {
             io::printfn("ERROR: send text failed: %s", error);
             continue;
         }
-        if (catch error = ws.send_frame(true, c3ws::OPCODE_CLOSE(<TcpSocket, false, CHUNK_SIZE>), {})) {
+        if (catch error = ws.send_frame(true, ws::OPCODE_CLOSE, {})) {
             io::printfn("ERROR: failed to close the connection: %s", error);
             continue;
         }
