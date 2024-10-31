@@ -18,7 +18,7 @@
 // LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-module c3ws(<Socket, CHUNK_SIZE>);
+module c3ws(<Socket, CLIENT, CHUNK_SIZE>);
 
 // TODO: run on https://github.com/crossbario/autobahn-testsuite
 
@@ -271,10 +271,12 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         // TODO: do we need to reverse the bytes on a machine with a different endianess than x86?
         // NOTE: client frames are always masked
         if (payload.len < 126) {
-            char data = (1 << 7) | (char) payload.len;
+            char data = CLIENT ? (1 << 7) : 0;
+            data |= (char) payload.len;
             ws.socket.write((&data)[0:1])!;
         } else if (payload.len <= ushort.max) {
-            char data = (1 << 7) | 126;
+            char data = CLIENT ? (1 << 7) : 0;
+            data |= 126;
             ws.socket.write((&data)[0:1])!;
 
             char[2] len = {
@@ -284,7 +286,8 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
 
             ws.socket.write(&len)!;
         } else if (payload.len > ushort.max) {
-            char data = (1 << 7) | 127;
+            char data = CLIENT ? (1 << 7) : 0;
+            data |= 127;
             char[8] len = {
                 (char) (payload.len >> (8 * 7)) & 0xFF,
                 (char) (payload.len >> (8 * 6)) & 0xFF,
@@ -301,38 +304,45 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         }
     }
 
-    char[4] mask = {};
+    if (CLIENT) {
+        char[4] mask = {};
 
-    // Generate and send mask
-    {
-        // TODO: use the rand from the standard library
-        foreach (&byte: mask) *byte = (char)(libc::rand() % 0x100);
-        ws.socket.write(&mask)!;
-    }
-
-    // Mask the payload and send it
-    for (uint i = 0; i < payload.len; ) {
-        char[1024] chunk;
-        uint chunk_size = 0;
-        while (i < payload.len && chunk_size < chunk.len) {
-            chunk[chunk_size] = payload[i] ^ mask[i % 4];
-            chunk_size += 1;
-            i += 1;
+        // Generate and send mask
+        {
+            // TODO: use the rand from the standard library
+            foreach (&byte: mask) *byte = (char)(libc::rand() % 0x100);
+            ws.socket.write(&mask)!;
         }
-        ws.socket.write(chunk[0:chunk_size])!;
+
+        // Mask the payload and send it
+        for (uint i = 0; i < payload.len; ) {
+            char[1024] chunk;
+            uint chunk_size = 0;
+            while (i < payload.len && chunk_size < chunk.len) {
+                chunk[chunk_size] = payload[i] ^ mask[i % 4];
+                chunk_size += 1;
+                i += 1;
+            }
+            ws.socket.write(chunk[0:chunk_size])!;
+        }
+    } else {
+        ws.socket.write(payload)!;
     }
 }
 
 fn void! Ws.send_message(ws, Ws_Message_Kind kind, char[] payload, uint chunk_len)
 {
     bool first = true;
-    while (payload.len > 0) {
+    do {
         uint len = payload.len;
         if (len > chunk_len) len = chunk_len;
-        ws.send_frame(payload.len - len == 0, first ? (Ws_Opcode) kind : OPCODE_CONT, payload[0:len])!;
+        bool fin = payload.len - len == 0;
+        Ws_Opcode opcode = first ? (Ws_Opcode) kind : OPCODE_CONT;
+
+        ws.send_frame(fin, opcode, payload[0:len])!;
         payload = payload[len..];
         first = false;
-    }
+    } while(payload.len > 0);
 }
 
 fn void! Ws.send_text(ws, String text)
@@ -387,9 +397,7 @@ fn Ws_Frame*! Ws.read_frame(ws)
         }
     }
 
-    // Read the mask
-    // TODO: the server may not send masked frames
-    char[4] mask;
+    char[4] mask = {};
     bool masked = (bool) mASK(header);
     if (masked) {
         ws.socket.read_entire_buffer(&mask)!;

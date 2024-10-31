@@ -25,7 +25,7 @@ fn int main(String[] args)
 
     String message = @shift(args);
 
-    Ws(<TcpSocket, 100>) ws = { .socket = tcp::connect(config::HOST, config::PORT)!! };
+    Ws(<TcpSocket, true, 1024>) ws = { .socket = tcp::connect(config::HOST, config::PORT)!! };
     defer ws.socket.close()!!;
     ws.client_handshake(config::HOST)!!;
     ws.send_text(message)!!;
