@@ -196,7 +196,7 @@ fn void! Ws.send_binary(ws, char[] binary)
     return ws.send_message(ws::MESSAGE_BIN, binary);
 }
 
-fn Ws_Frame*! Ws.read_frame(ws)
+fn Ws_Frame! Ws.read_frame(ws)
 {
     char[2] header;
 
@@ -241,10 +241,11 @@ fn Ws_Frame*! Ws.read_frame(ws)
 
     // Read the payload
     {
-        Ws_Frame *frame = mem::temp_new(Ws_Frame);
-        frame.fin = (bool) ws::fIN(header);
-        frame.opcode = (Ws_Opcode) ws::oPCODE(header);
-        frame.payload = mem::temp_new_array(char, payload_len);
+        Ws_Frame frame = {
+            .fin = (bool) ws::fIN(header),
+            .opcode = (Ws_Opcode) ws::oPCODE(header),
+            .payload = mem::temp_new_array(char, payload_len),
+        };
 
         if (frame.payload.len > 0) {
             ws.socket.read_entire_buffer(frame.payload)!;
