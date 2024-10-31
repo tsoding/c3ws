@@ -1,10 +1,10 @@
+<!DOCTYPE html>
 <html>
     <head>
         <title>C3 WebSocket Library</title>
     </head>
     <body>
-        <!-- TODO: Chrome doesn't like that the server sends masked frames -->
-        <p>Start the <code>example_server</code> and send some text to it via this field (may not work in Chrome for now):</p>
+        <p>Start the <code>example_server</code> and send some text to it via this field:</p>
         <input id="message" onkeydown="if (event.keyCode === 13) sendMessage()"></input>
         <button onclick="sendMessage()">Send</button>
         <p id=response></p>
