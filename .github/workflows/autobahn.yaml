@@ -10,4 +10,4 @@ jobs:
         with:
           python-version: 'pypy2.7'
       - run: pip install -U pip
-      - run: pip install autobahntestsuit==0.8.2
+      - run: pip install autobahntestsuite==0.8.2
