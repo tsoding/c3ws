@@ -10,7 +10,7 @@ jobs:
         with:
           python-version: 'pypy2.7'
       - run: pip install virtualenv
-      - run: python -m venv ./venv/
+      - run: python -m virtualenv ./venv/
       - run: ./venv/bin/pip install autobahntestsuite==0.8.2
       - run: ./venv/bin/wstest --help
       #- run: wget https://downloads.python.org/pypy/pypy2.7-v7.3.17-linux64.tar.bz2
