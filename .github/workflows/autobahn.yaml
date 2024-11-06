@@ -11,4 +11,5 @@ jobs:
           python-version: '3.13'
       - run: pip install -U pip
       - run: pip install autobahntestsuite==0.8.2
+      - run: wstest --help
       #- run: python -m venv ./venv/
