@@ -10,11 +10,8 @@ jobs:
         with:
           python-version: '3.13'
       #- run: pip install -U pip
-      - run: |
-        wget https://downloads.python.org/pypy/pypy2.7-v7.3.17-linux64.tar.bz2
-        tar fvx pypy2.7-v7.3.17-linux64.tar.bz2
       - run: python -m venv ./venv/
-      - run: |
-        source ./venv/bin/activate
-        pip install autobahntestsuite==0.8.2
-        ./pypy2.7-v7.3.17-linux64/bin/pypy $(which wstest) --help
+      - run: ./venv/bin/pip install autobahntestsuite==0.8.2
+      - run: wget https://downloads.python.org/pypy/pypy2.7-v7.3.17-linux64.tar.bz2
+      - run: tar fvx pypy2.7-v7.3.17-linux64.tar.bz2
+      - run: ./pypy2.7-v7.3.17-linux64/bin/pypy ./venv/bin/wstest --help
