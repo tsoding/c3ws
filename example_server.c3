@@ -23,33 +23,24 @@ fn void main() {
     io::printfn("Listening to %s:%d", config::HOST, config::PORT);
     usz temp_mark = allocator::temp().mark();
     while (try client = tcp::accept(&server)) {
-        defer {
-            allocator::temp().reset(temp_mark);
-        }
+        defer allocator::temp().reset(temp_mark);
 
         io::printfn("INFO: Accepted connection");
         Ws(<TcpSocket, false, CHUNK_SIZE>) ws = { .socket = client };
-        defer {
-            ws.socket.close()!!;
-        }
+        defer (void)ws.socket.close();
 
         if (catch error = ws.server_handshake()) {
             io::printfn("ERROR: handshake failed: %s", error);
             continue;
         }
+        defer (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
+
         Ws_Message! message = ws.read_message();
         if (catch error = message) {
             io::printfn("ERROR: could not read message from client: %s", error);
             continue;
         }
         io::printfn("INFO: Client sent: %d bytes", message.payload.len);
-        if (catch error = ws.send_message(message.kind, message.payload)) {
-            io::printfn("ERROR: send text failed: %s", error);
-            continue;
-        }
-        if (catch error = ws.send_frame(true, ws::OPCODE_CLOSE, {})) {
-            io::printfn("ERROR: failed to close the connection: %s", error);
-            continue;
-        }
+        (void)ws.send_message(message.kind, message.payload);
     }
 }
