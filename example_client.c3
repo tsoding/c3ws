@@ -26,7 +26,10 @@ fn int main(String[] args)
     String message = @shift(args);
 
     Ws(<TcpSocket, true, 1024>) ws = { .socket = tcp::connect(config::HOST, config::PORT)!! };
-    defer ws.socket.close()!!;
+    defer {
+        ws.send_frame(true, ws::OPCODE_CLOSE, {})!!;
+        ws.socket.close()!!;
+    }
     ws.client_handshake(config::HOST)!!;
     ws.send_text(message)!!;
     io::printfn("Message from server: %s", (String)ws.read_message()!!.payload);
