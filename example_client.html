@@ -22,6 +22,7 @@
                 ws.onmessage = (e) => {
                     console.log("WebSocket MESSAGE", e);
                     response.innerText = `Response from the server: ${e.data}`;
+                    ws.close();
                 };
                 ws.onclose = (e) => {
                     console.log("WebSocket CLOSE", e);
