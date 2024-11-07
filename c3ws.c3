@@ -433,7 +433,7 @@ const Ws_Opcode OPCODE_CLOSE = 0x8;
 const Ws_Opcode OPCODE_PING  = 0x9;
 const Ws_Opcode OPCODE_PONG  = 0xA;
 
-fn String opcode_name(Ws_Opcode opcode)
+fn String Ws_Opcode.name(opcode)
 {
     switch (opcode) {
     case OPCODE_CONT:  return "CONT";
