@@ -206,6 +206,9 @@ fn Ws_Frame! Ws.read_frame(ws)
     Ws_Frame frame = {
         .fin = (bool) ws::fIN(header),
         .opcode = (Ws_Opcode) ws::oPCODE(header),
+        .rsv1 = (bool) ws::rSV1(header),
+        .rsv2 = (bool) ws::rSV2(header),
+        .rsv3 = (bool) ws::rSV3(header),
     };
 
     uint payload_len = 0;
@@ -243,6 +246,18 @@ fn Ws_Frame! Ws.read_frame(ws)
     // > and MUST NOT be fragmented.
     if (frame.opcode.is_control() && (payload_len > 125 || !frame.fin)) {
         return Ws_Error.CONTROL_FRAME_TOO_BIG?;
+    }
+
+    // RFC 6455 - Section 5.2:
+    // >  RSV1, RSV2, RSV3:  1 bit each
+    // >
+    // >     MUST be 0 unless an extension is negotiated that defines meanings
+    // >     for non-zero values.  If a nonzero value is received and none of
+    // >     the negotiated extensions defines the meaning of such a nonzero
+    // >     value, the receiving endpoint MUST _Fail the WebSocket
+    // >     Connection_.
+    if (frame.rsv1 || frame.rsv2 || frame.rsv3) {
+        return Ws_Error.RESERVED_BITS_NOT_NEGOTIATED?;
     }
 
     // Read the mask if masked
@@ -304,21 +319,25 @@ import std::hash::sha1;
 import std::encoding::base64;
 
 fault Ws_Error {
-    // Ws.client_handshake() has failed
+    // Client Handshake Errors
     CLIENT_HANDSHAKE_BAD_RESPONSE,
     CLIENT_HANDSHAKE_NO_ACCEPT,
     CLIENT_HANDSHAKE_DUPLICATE_ACCEPT,
     CLIENT_HANDSHAKE_BAD_ACCEPT,
-    // Ws.server_handshake() has failed
+    // Server Handshake Errors
     SERVER_HANDSHAKE_BAD_REQUEST,
     SERVER_HANDSHAKE_NO_KEY,
     SERVER_HANDSHAKE_DUPLICATE_KEY,
-    // Control errors
+    // Connection Errors
     CLOSE_FRAME_SENT,
     CONTROL_FRAME_TOO_BIG,
+    RESERVED_BITS_NOT_NEGOTIATED,
 }
 
-macro char fIN(char[2] header)         => ((header)[0] >> 7);
+macro char fIN(char[2] header)         => (((header)[0] >> 7)&0x1);
+macro char rSV1(char[2] header)        => (((header)[0] >> 6)&0x1);
+macro char rSV2(char[2] header)        => (((header)[0] >> 5)&0x1);
+macro char rSV3(char[2] header)        => (((header)[0] >> 4)&0x1);
 macro char oPCODE(char[2] header)      => ((header)[0] & 0xF);
 macro char mASK(char[2] header)        => ((header)[1] >> 7);
 macro char pAYLOAD_LEN(char[2] header) => ((header)[1] & 0x7F);
@@ -464,7 +483,7 @@ fn bool Ws_Opcode.is_control(opcode)
 }
 
 struct Ws_Frame {
-    bool fin;
+    bool fin, rsv1, rsv2, rsv3;
     Ws_Opcode opcode;
     char[] payload;
 }
