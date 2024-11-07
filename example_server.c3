@@ -36,8 +36,14 @@ fn void main() {
             io::printfn("ERROR: handshake failed: %s", error);
             continue;
         }
+        // TODO: Tuck sending the CLOSE frame under some abstraction of "Closing the WebSocket".
+        // Maybe some sort of ws.close() method.
         defer (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
 
+        // TODO: Turn example_server into an asynchronous echo server that just continuosly echos all the client messages
+        // until the client closes the connection. I think some of the Autobahn Test Cases depends on this exact behavior.
+        // This may require implementing proper periodic pinging of the clients and closing those who fell off.
+        // (Which I believe is also part of some of the Autobahn Test Cases).
         Ws_Message! message = ws.read_message();
         if (catch error = message) {
             io::printfn("ERROR: could not read message from client: %s", error);
