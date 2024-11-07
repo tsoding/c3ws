@@ -49,6 +49,7 @@ $endif
 
 struct Ws {
     Socket socket;
+    bool debug; // Enable debug logging
 }
 
 fn void! Ws.server_handshake(ws)
@@ -202,6 +203,10 @@ fn Ws_Frame! Ws.read_frame(ws)
 
     // Read the header
     ws.socket.read_entire_buffer(&header)!;
+    Ws_Frame frame = {
+        .fin = (bool) ws::fIN(header),
+        .opcode = (Ws_Opcode) ws::oPCODE(header),
+    };
 
     uint payload_len = 0;
 
@@ -210,29 +215,37 @@ fn Ws_Frame! Ws.read_frame(ws)
         // TODO: do we need to reverse the bytes on a machine with a different endianess than x86?
         char len = ws::pAYLOAD_LEN(header);
         switch (len) {
-        case 126: {
+        case 126:
             char[2] ext_len = {};
             ws.socket.read_entire_buffer(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 payload_len = (payload_len << 8) | ext_len[i];
             }
-        }
-        break;
-        case 127: {
+        case 127:
             char[8] ext_len = {};
             ws.socket.read_entire_buffer(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 payload_len = (payload_len << 8) | ext_len[i];
             }
-        }
-        break;
         default:
             payload_len = len;
         }
     }
 
+    if (ws.debug) {
+        io::printfn("C3WS DEBUG: FRAME: FIN(%s), OPCODE(%s, %x), PAYLOAD_LEN: %d", frame.fin ? "true" : "false", frame.opcode.name(), (char)frame.opcode, payload_len);
+    }
+
+    // RFC 6455 - Section 5.5:
+    // > All control frames MUST have a payload length of 125 bytes or less
+    // > and MUST NOT be fragmented.
+    if (frame.opcode.is_control() && (payload_len > 125 || !frame.fin)) {
+        return Ws_Error.CONTROL_FRAME_TOO_BIG?;
+    }
+
+    // Read the mask if masked
     char[4] mask = {};
     bool masked = (bool) ws::mASK(header);
     if (masked) {
@@ -240,24 +253,17 @@ fn Ws_Frame! Ws.read_frame(ws)
     }
 
     // Read the payload
-    {
-        Ws_Frame frame = {
-            .fin = (bool) ws::fIN(header),
-            .opcode = (Ws_Opcode) ws::oPCODE(header),
-            .payload = mem::temp_new_array(char, payload_len),
-        };
-
-        if (frame.payload.len > 0) {
-            ws.socket.read_entire_buffer(frame.payload)!;
-            if (masked) {
-                foreach (i, &x: frame.payload) {
-                    *x ^= mask[i % 4];
-                }
+    frame.payload = mem::temp_new_array(char, payload_len);
+    if (frame.payload.len > 0) {
+        ws.socket.read_entire_buffer(frame.payload)!;
+        if (masked) {
+            foreach (i, &x: frame.payload) {
+                *x ^= mask[i % 4];
             }
         }
-
-        return frame;
     }
+
+    return frame;
 }
 
 fn Ws_Message! Ws.read_message(ws)
@@ -267,7 +273,7 @@ fn Ws_Message! Ws.read_message(ws)
     payload.new_init(1024, allocator::temp());
 
     while (try frame = ws.read_frame()) {
-        if (ws::opcode_is_control(frame.opcode)) {
+        if (frame.opcode.is_control()) {
             switch (frame.opcode) {
             case ws::OPCODE_CLOSE:
                 return Ws_Error.CLOSE_FRAME_SENT?;
@@ -307,7 +313,9 @@ fault Ws_Error {
     SERVER_HANDSHAKE_BAD_REQUEST,
     SERVER_HANDSHAKE_NO_KEY,
     SERVER_HANDSHAKE_DUPLICATE_KEY,
+    // Control errors
     CLOSE_FRAME_SENT,
+    CONTROL_FRAME_TOO_BIG,
 }
 
 macro char fIN(char[2] header)         => ((header)[0] >> 7);
@@ -450,7 +458,7 @@ fn String Ws_Opcode.name(opcode)
     }
 }
 
-fn bool opcode_is_control(Ws_Opcode opcode)
+fn bool Ws_Opcode.is_control(opcode)
 {
     return 0x8 <= opcode && opcode <= 0xF;
 }

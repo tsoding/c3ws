@@ -26,7 +26,10 @@ fn void main() {
         defer allocator::temp().reset(temp_mark);
 
         io::printfn("INFO: Accepted connection");
-        Ws(<TcpSocket, false, CHUNK_SIZE>) ws = { .socket = client };
+        Ws(<TcpSocket, false, CHUNK_SIZE>) ws = {
+            .socket = client,
+            .debug = true,
+        };
         defer (void)ws.socket.close();
 
         if (catch error = ws.server_handshake()) {
