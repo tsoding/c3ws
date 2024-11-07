@@ -1,8 +1,7 @@
 module example::server;
-import c3ws;
-import c3ws::ws;
+import c3ws, c3ws::ws;
 import std::io;
-import std::net::tcp;
+import std::net::tcp, std::net::os;
 import example::config;
 import libc;
 
@@ -19,7 +18,8 @@ fn void main() {
         libc::sigaction(libc::SIGPIPE, &act, null);
     $endif
 
-    TcpServerSocket server = tcp::listen(config::HOST, config::PORT, 10)!!;
+    TcpServerSocket server = tcp::listen(config::HOST, config::PORT, 10, REUSEADDR)!!;
+
     io::printfn("Listening to %s:%d", config::HOST, config::PORT);
     usz temp_mark = allocator::temp().mark();
     while (try client = tcp::accept(&server)) {
