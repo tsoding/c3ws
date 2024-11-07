@@ -270,7 +270,7 @@ fn Ws_Message! Ws.read_message(ws)
         if (ws::opcode_is_control(frame.opcode)) {
             switch (frame.opcode) {
             case ws::OPCODE_CLOSE:
-                return Ws_Error.SERVER_CLOSE_ERROR?;
+                return Ws_Error.CLOSE_FRAME_SENT?;
             case ws::OPCODE_PING:
                 ws.send_frame(true, ws::OPCODE_PONG, frame.payload)!;
                 break;
@@ -307,8 +307,7 @@ fault Ws_Error {
     SERVER_HANDSHAKE_BAD_REQUEST,
     SERVER_HANDSHAKE_NO_KEY,
     SERVER_HANDSHAKE_DUPLICATE_KEY,
-    // Server sent CLOSE frame during Ws.read_message()
-    SERVER_CLOSE_ERROR,
+    CLOSE_FRAME_SENT,
 }
 
 macro char fIN(char[2] header)         => ((header)[0] >> 7);
