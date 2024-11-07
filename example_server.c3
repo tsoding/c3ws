@@ -13,10 +13,11 @@ const SignalFunction SIG_DFL = (SignalFunction)0x0;
 const int CHUNK_SIZE = 1024;
 
 fn void main() {
-    // TODO: exclude this code on Windows
-    Sigaction act = {};
-    act.sa_handler = SIG_IGN;
-    libc::sigaction(libc::SIGPIPE, &act, null);
+    $if !env::WIN32:
+        Sigaction act = {};
+        act.sa_handler = SIG_IGN;
+        libc::sigaction(libc::SIGPIPE, &act, null);
+    $endif
 
     TcpServerSocket server = tcp::listen(config::HOST, config::PORT, 10)!!;
     io::printfn("Listening to %s:%d", config::HOST, config::PORT);
