@@ -46,7 +46,11 @@ fn void main() {
         // (Which I believe is also part of some of the Autobahn Test Cases).
         Ws_Message! message = ws.read_message();
         if (catch error = message) {
-            io::printfn("ERROR: could not read message from client: %s", error);
+            if (error == Ws_Error.CLOSE_FRAME_SENT) {
+                io::printfn("INFO: Client closed connection");
+            } else {
+                io::printfn("ERROR: Client connection failed: %s", error);
+            }
             continue;
         }
         io::printfn("INFO: Client sent: %d bytes", message.payload.len);
