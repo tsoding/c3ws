@@ -238,7 +238,7 @@ fn Ws_Frame! Ws.read_frame(ws)
     }
 
     if (ws.debug) {
-        io::printfn("C3WS DEBUG: FRAME: FIN(%s), OPCODE(%s, %x), PAYLOAD_LEN: %d", frame.fin ? "true" : "false", frame.opcode.name(), (char)frame.opcode, payload_len);
+        io::printfn("C3WS DEBUG: RX FRAME: FIN(%s), OPCODE(%s, %x), PAYLOAD_LEN: %d", frame.fin ? "true" : "false", frame.opcode.name(), (char)frame.opcode, payload_len);
     }
 
     // RFC 6455 - Section 5.5:
