@@ -307,8 +307,6 @@ fault Ws_Error {
     SERVER_HANDSHAKE_BAD_REQUEST,
     SERVER_HANDSHAKE_NO_KEY,
     SERVER_HANDSHAKE_DUPLICATE_KEY,
-    // Socket.read or Socket.write have failed
-    SOCKET_ERROR,
     // Server sent CLOSE frame during Ws.read_message()
     SERVER_CLOSE_ERROR,
 }
