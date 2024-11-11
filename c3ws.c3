@@ -305,7 +305,8 @@ fn Ws_Message! Ws.read_message(ws)
     DString payload;
     payload.new_init(1024, allocator::temp());
 
-    while (try frame = ws.read_frame()) {
+    for (;;) {
+        Ws_Frame frame = ws.read_frame()!;
         if (frame.opcode.is_control()) {
             switch (frame.opcode) {
             case ws::OPCODE_CLOSE:
