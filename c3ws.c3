@@ -33,6 +33,13 @@ fn void! Socket.read_entire_buffer(&self, char[] buffer) {
     }
 }
 
+fn void! Socket.write_entire_buffer(&self, char[] buffer) {
+    while (buffer.len > 0) {
+        usz n = self.write(buffer)!;
+        buffer = buffer[n..];
+    }
+}
+
 // TODO: move Socket.peek into the std and make a PR to c3 maybe?
 fn usz! Socket.peek(&self, char[] bytes) @dynamic
 {
@@ -105,7 +112,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         // NOTE: FIN is always set
         char data = (char) opcode;
         if (fin) data |= (1 << 7);
-        ws.socket.write((&data)[0:1])!;
+        ws.socket.write_entire_buffer((&data)[0:1])!;
     }
 
     // Send masked and payload length
@@ -115,18 +122,18 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         if (payload.len < 126) {
             char data = CLIENT ? (1 << 7) : 0;
             data |= (char) payload.len;
-            ws.socket.write((&data)[0:1])!;
+            ws.socket.write_entire_buffer((&data)[0:1])!;
         } else if (payload.len <= ushort.max) {
             char data = CLIENT ? (1 << 7) : 0;
             data |= 126;
-            ws.socket.write((&data)[0:1])!;
+            ws.socket.write_entire_buffer((&data)[0:1])!;
 
             char[2] len = {
                 (char)(payload.len >> (8 * 1)) & 0xFF,
                 (char)(payload.len >> (8 * 0)) & 0xFF
             };
 
-            ws.socket.write(&len)!;
+            ws.socket.write_entire_buffer(&len)!;
         } else if (payload.len > ushort.max) {
             char data = CLIENT ? (1 << 7) : 0;
             data |= 127;
@@ -141,8 +148,8 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
                 (char) (payload.len >> (8 * 0)) & 0xFF
             };
 
-            ws.socket.write((&data)[0:1])!;
-            ws.socket.write(&len)!;
+            ws.socket.write_entire_buffer((&data)[0:1])!;
+            ws.socket.write_entire_buffer(&len)!;
         }
     }
 
@@ -153,7 +160,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         {
             // TODO: use the rand from the standard library
             foreach (&byte: mask) *byte = (char)(libc::rand() % 0x100);
-            ws.socket.write(&mask)!;
+            ws.socket.write_entire_buffer(&mask)!;
         }
 
         // Mask the payload and send it
@@ -165,10 +172,10 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
                 chunk_size += 1;
                 i += 1;
             }
-            ws.socket.write(chunk[0:chunk_size])!;
+            ws.socket.write_entire_buffer(chunk[0:chunk_size])!;
         }
     } else {
-        ws.socket.write(payload)!;
+        ws.socket.write_entire_buffer(payload)!;
     }
 }
 
