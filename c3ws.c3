@@ -107,6 +107,13 @@ fn void! Ws.client_handshake(ws, String host)
 
 fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
 {
+    if (ws.debug) {
+        io::printfn("C3WS DEBUG: TX FRAME: FIN(%d), OPCODE(%s), RSV(000), PAYLOAD_LEN: %d", 
+                    fin,
+                    opcode.name(),
+                    payload.len);
+    }
+
     // Send FIN and OPCODE
     {
         // NOTE: FIN is always set
@@ -245,7 +252,11 @@ fn Ws_Frame! Ws.read_frame(ws)
     }
 
     if (ws.debug) {
-        io::printfn("C3WS DEBUG: RX FRAME: FIN(%s), OPCODE(%s, %x), PAYLOAD_LEN: %d", frame.fin ? "true" : "false", frame.opcode.name(), (char)frame.opcode, payload_len);
+        io::printfn("C3WS DEBUG: RX FRAME: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d", 
+                    frame.fin,
+                    frame.opcode.name(),
+                    frame.rsv1, frame.rsv2, frame.rsv3,
+                    payload_len);
     }
 
     // RFC 6455 - Section 5.5:
