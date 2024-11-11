@@ -10,7 +10,7 @@
         <p id=response></p>
         <script>
             function sendMessage() {
-                const ws = new WebSocket("ws://localhost:6969/");
+                const ws = new WebSocket("ws://localhost:9001/");
                 ws.onerror = (e) => {
                     console.log("WebSocket ERROR", e);
                     response.innerText = `WebSocket connection to server failed`;
