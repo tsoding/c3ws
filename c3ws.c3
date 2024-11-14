@@ -25,6 +25,7 @@ module c3ws(<Socket, CLIENT, CHUNK_SIZE>);
 import libc;
 import std::io;
 import std::net::os;
+import std::core::string;
 
 fn void! Socket.read_entire_buffer(&self, char[] buffer) {
     while (buffer.len > 0) {
@@ -340,7 +341,17 @@ fn Ws_Message! Ws.read_message(ws)
         }
     }
 
+
     message.payload = payload.str_view();
+
+    if (message.kind == ws::MESSAGE_TEXT) {
+        // Verifying UTF-8
+        for (usz i = 0; i < message.payload.len;) {
+            usz size = message.payload.len - i;
+            conv::utf8_to_char32(&message.payload[i], &size)!;
+            i += size;
+        }
+    }
 
     return message;
 }
