@@ -8,10 +8,27 @@ import libc;
 // TODO: consider submitting these definitions as a PR to c3c
 const SignalFunction SIG_IGN = (SignalFunction)0x1;
 const SignalFunction SIG_DFL = (SignalFunction)0x0;
+const CInt SHUT_RD = 0;
+const CInt SHUT_WR = 1;
+const CInt SHUT_RDWR = 2;
+extern fn CInt shutdown(CInt sockfd, CInt how);
 
 const int CHUNK_SIZE = 1024;
 
 fn void ws_echo_server(TcpSocket client) {
+    defer {
+        // Base on the ideas from https://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+        // Informing the OS that we are not planning to send anything anymore
+        shutdown(client.sock, SHUT_WR);
+        // Depleting input before closing socket, so the OS does not send RST just because we have some input pending on close
+        char[1024] buffer;
+        while (try n = client.read(buffer[0..])) {
+            if (n == 0) break;
+        }
+        // TODO: consider depleting the send buffer on Linux with ioctl(fd, SIOCOUTQ, &outstanding)
+        // Actually destroying the socket
+        (void)client.close();
+    }
     usz temp_mark = allocator::temp().mark();
     defer allocator::temp().reset(temp_mark);
 
@@ -19,31 +36,32 @@ fn void ws_echo_server(TcpSocket client) {
         .socket = client,
         .debug = true,
     };
-    defer (void)ws.socket.close();
 
     if (catch error = ws.server_handshake()) {
         io::printfn("ERROR: handshake failed: %s", error);
         return;
     }
-    // TODO: Tuck sending the CLOSE frame under some abstraction of "Closing the WebSocket".
-    // Maybe some sort of ws.close() method.
-    defer (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
 
     // TODO: Turn example_server into an asynchronous echo server that just continuosly echos all the client messages
     // until the client closes the connection. I think some of the Autobahn Test Cases depends on this exact behavior.
     // This may require implementing proper periodic pinging of the clients and closing those who fell off.
     // (Which I believe is also part of some of the Autobahn Test Cases).
-    Ws_Message! message = ws.read_message();
-    if (catch error = message) {
-        if (error == Ws_Error.CLOSE_FRAME_SENT) {
-            io::printfn("INFO: Client closed connection");
-        } else {
-            io::printfn("ERROR: Client connection failed: %s", error);
+    for ECHO: (;;) {
+        Ws_Message! message = ws.read_message();
+        if (catch error = message) {
+            if (error == Ws_Error.CLOSE_FRAME_SENT) {
+                io::printfn("INFO: Client closed connection");
+            } else {
+                io::printfn("ERROR: Client connection failed: %s", error);
+            }
+            // TODO: Tuck sending the CLOSE frame under some abstraction of "Closing the WebSocket".
+            // Maybe some sort of ws.close() method.
+            defer (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
+            break ECHO;
         }
-        return;
+        io::printfn("INFO: Client sent: %d bytes", message.payload.len);
+        (void)ws.send_message(message.kind, message.payload);
     }
-    io::printfn("INFO: Client sent: %d bytes", message.payload.len);
-    (void)ws.send_message(message.kind, message.payload);
 }
 
 fn void main() {
@@ -58,6 +76,7 @@ fn void main() {
     TcpServerSocket server = tcp::listen(config::HOST, config::PORT, 10, REUSEADDR)!!;
     io::printfn("Listening to %s:%d", config::HOST, config::PORT);
     while ACCEPT: (try client = tcp::accept(&server)) {
+        // TODO: apply SO_LINGER to the client sockets
         io::printfn("INFO: Accepted connection");
         ws_echo_server(client);
     }
