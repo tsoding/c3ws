@@ -313,10 +313,8 @@ fn Ws_Message! Ws.read_message(ws)
                 return Ws_Error.CLOSE_FRAME_SENT?;
             case ws::OPCODE_PING:
                 ws.send_frame(true, ws::OPCODE_PONG, frame.payload)!;
-                break;
-            default: {
-                // Ignore any other control frames for now
-            }
+            default:
+                return Ws_Error.UNEXPECTED_OPCODE?;
             }
         } else {
             // TODO: ws.read_message does not verify that the message starts with non CONT frame (does it have to start with non-CONT frame)?
@@ -351,6 +349,7 @@ fault Ws_Error {
     CLOSE_FRAME_SENT,
     CONTROL_FRAME_TOO_BIG,
     RESERVED_BITS_NOT_NEGOTIATED,
+    UNEXPECTED_OPCODE,
 }
 
 macro char fIN(char[2] header)         => (((header)[0] >> 7)&0x1);
