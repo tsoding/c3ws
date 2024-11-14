@@ -304,6 +304,7 @@ fn Ws_Message! Ws.read_message(ws)
     Ws_Message message;
     DString payload;
     payload.new_init(1024, allocator::temp());
+    bool cont = false;
 
     for (;;) {
         Ws_Frame frame = ws.read_frame()!;
@@ -313,13 +314,27 @@ fn Ws_Message! Ws.read_message(ws)
                 return Ws_Error.CLOSE_FRAME_SENT?;
             case ws::OPCODE_PING:
                 ws.send_frame(true, ws::OPCODE_PONG, frame.payload)!;
+            case ws::OPCODE_PONG:
+                // Unsolicited PONGs are just ignored
+                break;
             default:
                 return Ws_Error.UNEXPECTED_OPCODE?;
             }
         } else {
-            // TODO: ws.read_message does not verify that the message starts with non CONT frame (does it have to start with non-CONT frame)?
-            // TODO: ws.read_message does not verify that any non-fin "continuation" frames have the CONT opcode
-            if (payload.len() == 0) message.kind = (Ws_Message_Kind) frame.opcode;
+            if (!cont) {
+                switch (frame.opcode) {
+                case ws::OPCODE_TEXT:
+                case ws::OPCODE_BIN:
+                    message.kind = (Ws_Message_Kind) frame.opcode;
+                default:
+                    return Ws_Error.UNEXPECTED_OPCODE?;
+                }
+                cont = true;
+            } else {
+                if (frame.opcode != ws::OPCODE_CONT) {
+                    return Ws_Error.UNEXPECTED_OPCODE?;
+                }
+            }
             payload.append(frame.payload);
             if (frame.fin) break;
         }
