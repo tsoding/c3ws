@@ -362,6 +362,8 @@ fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 	uc = uc + c & 0x3F;
 	// UTF-16 surrogate pairs
 	if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
+	// Maximum valid Unicode number
+	if (uc > 0x10FFFF) return UnicodeResult.INVALID_UTF8?;
 	return uc;
 }
 
