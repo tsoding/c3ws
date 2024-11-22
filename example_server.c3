@@ -25,7 +25,9 @@ fn void ws_echo_server(TcpSocket client) {
         while (try n = client.read(buffer[0..])) {
             if (n == 0) break;
         }
+
         // TODO: consider depleting the send buffer on Linux with ioctl(fd, SIOCOUTQ, &outstanding)
+
         // Actually destroying the socket
         (void)client.close();
     }
@@ -56,6 +58,8 @@ fn void ws_echo_server(TcpSocket client) {
             }
             // TODO: Tuck sending the CLOSE frame under some abstraction of "Closing the WebSocket".
             // Maybe some sort of ws.close() method.
+            // TODO: The server may give a reason of the close via the status code
+            // See RFC6466, Section 7.4
             defer (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
             break ECHO;
         }
