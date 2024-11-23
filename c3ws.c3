@@ -109,7 +109,7 @@ fn void! Ws.client_handshake(ws, String host)
 fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
 {
     if (ws.debug) {
-        io::printfn("C3WS DEBUG: TX FRAME: FIN(%d), OPCODE(%s), RSV(000), PAYLOAD_LEN: %d", 
+        io::printfn("C3WS DEBUG: TX FRAME: FIN(%d), OPCODE(%s), RSV(000), PAYLOAD_LEN: %d",
                     fin,
                     opcode.name(),
                     payload.len);
@@ -253,7 +253,7 @@ fn Ws_Frame! Ws.read_frame(ws)
     }
 
     if (ws.debug) {
-        io::printfn("C3WS DEBUG: RX FRAME: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d", 
+        io::printfn("C3WS DEBUG: RX FRAME: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d",
                     frame.fin,
                     frame.opcode.name(),
                     frame.rsv1, frame.rsv2, frame.rsv3,
@@ -306,6 +306,7 @@ fn Ws_Message! Ws.read_message(ws)
     DString payload;
     payload.new_init(1024, allocator::temp());
     bool cont = false;
+    usz verify_pos = 0;
 
     for (;;) {
         Ws_Frame frame = ws.read_frame()!;
@@ -337,20 +338,26 @@ fn Ws_Message! Ws.read_message(ws)
                 }
             }
             payload.append(frame.payload);
+            if (message.kind == ws::MESSAGE_TEXT) {
+                // Verifying UTF-8
+                String payload_view = payload.str_view();
+                while VERIFY: (verify_pos < payload_view.len) {
+                    usz size = payload_view.len - verify_pos;
+                    if (catch excuse = ws::utf8_to_char32_fixed(&payload_view[verify_pos], &size)) {
+                        case ExtraUnicodeResult.SHORT_UTF8:
+                            if (!frame.fin) break VERIFY; // Tolerating the unfinished UTF-8 sequences if the message is unfinished
+                            nextcase;
+                        default:
+                            return excuse?; // Fail-fast on invalid UTF-8
+                    }
+                    verify_pos += size;
+                }
+            }
             if (frame.fin) break;
         }
     }
 
     message.payload = payload.str_view();
-
-    if (message.kind == ws::MESSAGE_TEXT) {
-        // Verifying UTF-8
-        for (usz i = 0; i < message.payload.len;) {
-            usz size = message.payload.len - i;
-            ws::utf8_to_char32_fixed(&message.payload[i], &size)!;
-            i += size;
-        }
-    }
 
     return message;
 }
@@ -531,6 +538,10 @@ struct Ws_Frame {
     char[] payload;
 }
 
+fault ExtraUnicodeResult {
+    SHORT_UTF8
+}
+
 // TODO: submit utf8_to_char32_fixed to c3c
 <*
  @param [in] ptr `pointer to the first character to parse`
@@ -540,7 +551,7 @@ struct Ws_Frame {
 fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 {
 	usz max_size = *size;
-	if (max_size < 1) return UnicodeResult.INVALID_UTF8?;
+	if (max_size < 1) return ExtraUnicodeResult.SHORT_UTF8?; // NEW
 	char c = (ptr++)[0];
 
 	if ((c & 0x80) == 0)
@@ -550,7 +561,7 @@ fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 	}
 	if ((c & 0xE0) == 0xC0)
 	{
-		if (max_size < 2) return UnicodeResult.INVALID_UTF8?;
+		if (max_size < 2) return ExtraUnicodeResult.SHORT_UTF8?; // NEW
 		*size = 2;
 		Char32 uc = (c & 0x1F) << 6;
 		c = *ptr;
@@ -563,7 +574,7 @@ fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 	}
 	if ((c & 0xF0) == 0xE0)
 	{
-		if (max_size < 3) return UnicodeResult.INVALID_UTF8?;
+		if (max_size < 3) return ExtraUnicodeResult.SHORT_UTF8?; // NEW
 		*size = 3;
 		Char32 uc = (c & 0x0F) << 12;
 		c = ptr++[0];
@@ -577,7 +588,7 @@ fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 		if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
 		return uc;
 	}
-	if (max_size < 4) return UnicodeResult.INVALID_UTF8?;
+	if (max_size < 4) return ExtraUnicodeResult.SHORT_UTF8?; // NEW
 	if ((c & 0xF8) != 0xF0) return UnicodeResult.INVALID_UTF8?;
 	*size = 4;
 	Char32 uc = (c & 0x07) << 18;
