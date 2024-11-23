@@ -300,73 +300,6 @@ fn Ws_Frame! Ws.read_frame(ws)
     return frame;
 }
 
-// TODO: submit utf8_to_char32_fixed to c3c
-<*
- @param [in] ptr `pointer to the first character to parse`
- @param [inout] size `Set to max characters to read, set to characters read`
- @return `the parsed 32 bit codepoint`
-*>
-fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
-{
-	usz max_size = *size;
-	if (max_size < 1) return UnicodeResult.INVALID_UTF8?;
-	char c = (ptr++)[0];
-
-	if ((c & 0x80) == 0)
-	{
-		*size = 1;
-		return c;
-	}
-	if ((c & 0xE0) == 0xC0)
-	{
-		if (max_size < 2) return UnicodeResult.INVALID_UTF8?;
-		*size = 2;
-		Char32 uc = (c & 0x1F) << 6;
-		c = *ptr;
-		// Overlong sequence or invalid second.
-		if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
-		uc = uc + c & 0x3F;
-		// UTF-16 surrogate pairs
-		if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
-		return uc;
-	}
-	if ((c & 0xF0) == 0xE0)
-	{
-		if (max_size < 3) return UnicodeResult.INVALID_UTF8?;
-		*size = 3;
-		Char32 uc = (c & 0x0F) << 12;
-		c = ptr++[0];
-		if (c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
-		uc += (c & 0x3F) << 6;
-		c = ptr++[0];
-		// Overlong sequence or invalid last
-		if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
-		uc = uc + c & 0x3F;
-		// UTF-16 surrogate pairs
-		if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
-		return uc;
-	}
-	if (max_size < 4) return UnicodeResult.INVALID_UTF8?;
-	if ((c & 0xF8) != 0xF0) return UnicodeResult.INVALID_UTF8?;
-	*size = 4;
-	Char32 uc = (c & 0x07) << 18;
-	c = ptr++[0];
-	if (c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
-	uc += (c & 0x3F) << 12;
-	c = ptr++[0];
-	if (c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
-	uc += (c & 0x3F) << 6;
-	c = ptr++[0];
-	// Overlong sequence or invalid last
-	if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
-	uc = uc + c & 0x3F;
-	// UTF-16 surrogate pairs
-	if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
-	// Maximum valid Unicode number
-	if (uc > 0x10FFFF) return UnicodeResult.INVALID_UTF8?;
-	return uc;
-}
-
 fn Ws_Message! Ws.read_message(ws)
 {
     Ws_Message message;
@@ -414,7 +347,7 @@ fn Ws_Message! Ws.read_message(ws)
         // Verifying UTF-8
         for (usz i = 0; i < message.payload.len;) {
             usz size = message.payload.len - i;
-            utf8_to_char32_fixed(&message.payload[i], &size)!;
+            ws::utf8_to_char32_fixed(&message.payload[i], &size)!;
             i += size;
         }
     }
@@ -596,4 +529,71 @@ struct Ws_Frame {
     bool fin, rsv1, rsv2, rsv3;
     Ws_Opcode opcode;
     char[] payload;
+}
+
+// TODO: submit utf8_to_char32_fixed to c3c
+<*
+ @param [in] ptr `pointer to the first character to parse`
+ @param [inout] size `Set to max characters to read, set to characters read`
+ @return `the parsed 32 bit codepoint`
+*>
+fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
+{
+	usz max_size = *size;
+	if (max_size < 1) return UnicodeResult.INVALID_UTF8?;
+	char c = (ptr++)[0];
+
+	if ((c & 0x80) == 0)
+	{
+		*size = 1;
+		return c;
+	}
+	if ((c & 0xE0) == 0xC0)
+	{
+		if (max_size < 2) return UnicodeResult.INVALID_UTF8?;
+		*size = 2;
+		Char32 uc = (c & 0x1F) << 6;
+		c = *ptr;
+		// Overlong sequence or invalid second.
+		if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
+		uc = uc + c & 0x3F;
+		// NEW: UTF-16 surrogate pairs
+		if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
+		return uc;
+	}
+	if ((c & 0xF0) == 0xE0)
+	{
+		if (max_size < 3) return UnicodeResult.INVALID_UTF8?;
+		*size = 3;
+		Char32 uc = (c & 0x0F) << 12;
+		c = ptr++[0];
+		if (c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
+		uc += (c & 0x3F) << 6;
+		c = ptr++[0];
+		// Overlong sequence or invalid last
+		if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
+		uc = uc + c & 0x3F;
+		// NEW: UTF-16 surrogate pairs
+		if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
+		return uc;
+	}
+	if (max_size < 4) return UnicodeResult.INVALID_UTF8?;
+	if ((c & 0xF8) != 0xF0) return UnicodeResult.INVALID_UTF8?;
+	*size = 4;
+	Char32 uc = (c & 0x07) << 18;
+	c = ptr++[0];
+	if (c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
+	uc += (c & 0x3F) << 12;
+	c = ptr++[0];
+	if (c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
+	uc += (c & 0x3F) << 6;
+	c = ptr++[0];
+	// Overlong sequence or invalid last
+	if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
+	uc = uc + c & 0x3F;
+	// NEW: UTF-16 surrogate pairs
+	if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
+	// NEW: Maximum valid Unicode number
+	if (uc > 0x10FFFF) return UnicodeResult.INVALID_UTF8?;
+	return uc;
 }
