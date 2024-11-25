@@ -1,0 +1,16 @@
+{
+  "name": "node_echo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "serve": "node index.js"
+  },
+  "keywords": [],
+  "author": "me",
+  "license": "MIT",
+  "description": "",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
