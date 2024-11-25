@@ -345,26 +345,32 @@ fn Ws_Message! Ws.read_message(ws)
                     return Ws_Error.UNEXPECTED_OPCODE?;
                 }
             }
-            payload.append(ws.read_frame_entire_payload(frame)!);
-            if (message.kind == ws::MESSAGE_TEXT) {
-                // Verifying UTF-8
-                while VERIFY: (verify_pos < payload.len()) {
-                    usz size = payload.len() - verify_pos;
-                    if (catch excuse = ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)) {
-                        case ExtraUnicodeResult.SHORT_UTF8:
-                            if (!frame.fin) {
-                                usz saved_len = payload.len();
-                                payload.extend_unfinished_utf8(verify_pos);
-                                size = payload.len() - verify_pos;
-                                ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)!;
-                                payload.chop(saved_len);
-                                break VERIFY; // Tolerating the unfinished UTF-8 sequences if the message is unfinished
-                            }
-                            nextcase;
-                        default:
-                            return excuse?; // Fail-fast on invalid UTF-8
+            char[] frame_payload = mem::temp_new_array(char, frame.payload_len);
+            usz frame_payload_size = 0;
+            while (frame_payload_size < frame_payload.len) {
+                usz n = ws.read_frame_payload_chunk(frame, frame_payload, frame_payload_size)!;
+                payload.append(frame_payload[frame_payload_size:n]);
+                frame_payload_size += n;
+                if (message.kind == ws::MESSAGE_TEXT) {
+                    // Verifying UTF-8
+                    while VERIFY: (verify_pos < payload.len()) {
+                        usz size = payload.len() - verify_pos;
+                        if (catch excuse = ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)) {
+                            case ExtraUnicodeResult.SHORT_UTF8:
+                                if (!frame.fin) {
+                                    usz saved_len = payload.len();
+                                    payload.extend_unfinished_utf8(verify_pos);
+                                    size = payload.len() - verify_pos;
+                                    ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)!;
+                                    payload.chop(saved_len);
+                                    break VERIFY; // Tolerating the unfinished UTF-8 sequences if the message is unfinished
+                                }
+                                nextcase;
+                            default:
+                                return excuse?; // Fail-fast on invalid UTF-8
+                        }
+                        verify_pos += size;
                     }
-                    verify_pos += size;
                 }
             }
             if (frame.fin) break;
