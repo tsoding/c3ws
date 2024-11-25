@@ -340,12 +340,18 @@ fn Ws_Message! Ws.read_message(ws)
             payload.append(frame.payload);
             if (message.kind == ws::MESSAGE_TEXT) {
                 // Verifying UTF-8
-                String payload_view = payload.str_view();
-                while VERIFY: (verify_pos < payload_view.len) {
-                    usz size = payload_view.len - verify_pos;
-                    if (catch excuse = ws::utf8_to_char32_fixed(&payload_view[verify_pos], &size)) {
+                while VERIFY: (verify_pos < payload.len()) {
+                    usz size = payload.len() - verify_pos;
+                    if (catch excuse = ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)) {
                         case ExtraUnicodeResult.SHORT_UTF8:
-                            if (!frame.fin) break VERIFY; // Tolerating the unfinished UTF-8 sequences if the message is unfinished
+                            if (!frame.fin) {
+                                usz saved_len = payload.len();
+                                payload.extend_unfinished_utf8(verify_pos);
+                                size = payload.len() - verify_pos;
+                                ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)!;
+                                payload.chop(saved_len);
+                                break VERIFY; // Tolerating the unfinished UTF-8 sequences if the message is unfinished
+                            }
                             nextcase;
                         default:
                             return excuse?; // Fail-fast on invalid UTF-8
@@ -540,6 +546,22 @@ struct Ws_Frame {
 
 fault ExtraUnicodeResult {
     SHORT_UTF8
+}
+
+fn void DString.extend_unfinished_utf8(&self, usz pos)
+{
+    char c = self.str_view()[pos];
+    usz size = 0;
+    if ((c & 0x80) == 0) {
+        size = 1;
+    } else if ((c & 0xE0) == 0xC0) {
+        size = 2;
+    } else if ((c & 0xF0) == 0xE0) {
+        size = 3;
+    } else {
+        size = 4;
+    }
+    while (self.len() - pos < size) self.append_char(0b1000_0000);
 }
 
 // TODO: submit utf8_to_char32_fixed to c3c
