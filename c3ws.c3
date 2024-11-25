@@ -212,21 +212,20 @@ fn void! Ws.send_binary(ws, char[] binary)
     return ws.send_message(ws::MESSAGE_BIN, binary);
 }
 
-fn Ws_Frame! Ws.read_frame(ws)
+fn Ws_Frame_Header! Ws.read_frame_header(ws)
 {
     char[2] header;
 
     // Read the header
     ws.socket.read_entire_buffer(&header)!;
-    Ws_Frame frame = {
+    Ws_Frame_Header frame_header = {
         .fin = (bool) ws::fIN(header),
-        .opcode = (Ws_Opcode) ws::oPCODE(header),
         .rsv1 = (bool) ws::rSV1(header),
         .rsv2 = (bool) ws::rSV2(header),
         .rsv3 = (bool) ws::rSV3(header),
+        .opcode = (Ws_Opcode) ws::oPCODE(header),
+        .masked = (bool) ws::mASK(header),
     };
-
-    uint payload_len = 0;
 
     // Parse the payload length
     {
@@ -238,32 +237,32 @@ fn Ws_Frame! Ws.read_frame(ws)
             ws.socket.read_entire_buffer(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
-                payload_len = (payload_len << 8) | ext_len[i];
+                frame_header.payload_len = (frame_header.payload_len << 8) | ext_len[i];
             }
         case 127:
             char[8] ext_len = {};
             ws.socket.read_entire_buffer(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
-                payload_len = (payload_len << 8) | ext_len[i];
+                frame_header.payload_len = (frame_header.payload_len << 8) | ext_len[i];
             }
         default:
-            payload_len = len;
+            frame_header.payload_len = len;
         }
     }
 
     if (ws.debug) {
         io::printfn("C3WS DEBUG: RX FRAME: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d",
-                    frame.fin,
-                    frame.opcode.name(),
-                    frame.rsv1, frame.rsv2, frame.rsv3,
-                    payload_len);
+                    frame_header.fin,
+                    frame_header.opcode.name(),
+                    frame_header.rsv1, frame_header.rsv2, frame_header.rsv3,
+                    frame_header.payload_len);
     }
 
     // RFC 6455 - Section 5.5:
     // > All control frames MUST have a payload length of 125 bytes or less
     // > and MUST NOT be fragmented.
-    if (frame.opcode.is_control() && (payload_len > 125 || !frame.fin)) {
+    if (frame_header.opcode.is_control() && (frame_header.payload_len > 125 || !frame_header.fin)) {
         return Ws_Error.CONTROL_FRAME_TOO_BIG?;
     }
 
@@ -275,29 +274,28 @@ fn Ws_Frame! Ws.read_frame(ws)
     // >     the negotiated extensions defines the meaning of such a nonzero
     // >     value, the receiving endpoint MUST _Fail the WebSocket
     // >     Connection_.
-    if (frame.rsv1 || frame.rsv2 || frame.rsv3) {
+    if (frame_header.rsv1 || frame_header.rsv2 || frame_header.rsv3) {
         return Ws_Error.RESERVED_BITS_NOT_NEGOTIATED?;
     }
 
     // Read the mask if masked
-    char[4] mask = {};
-    bool masked = (bool) ws::mASK(header);
-    if (masked) {
-        ws.socket.read_entire_buffer(&mask)!;
-    }
+    if (frame_header.masked) ws.socket.read_entire_buffer(&frame_header.mask)!;
 
+    return frame_header;
+}
+
+fn char[]! Ws.read_frame_payload(ws, Ws_Frame_Header frame_header) {
     // Read the payload
-    frame.payload = mem::temp_new_array(char, payload_len);
-    if (frame.payload.len > 0) {
-        ws.socket.read_entire_buffer(frame.payload)!;
-        if (masked) {
-            foreach (i, &x: frame.payload) {
-                *x ^= mask[i % 4];
+    char[] payload = mem::temp_new_array(char, frame_header.payload_len);
+    if (payload.len > 0) {
+        ws.socket.read_entire_buffer(payload)!;
+        if (frame_header.masked) {
+            foreach (i, &x: payload) {
+                *x ^= frame_header.mask[i % 4];
             }
         }
     }
-
-    return frame;
+    return payload;
 }
 
 fn Ws_Message! Ws.read_message(ws)
@@ -309,14 +307,15 @@ fn Ws_Message! Ws.read_message(ws)
     usz verify_pos = 0;
 
     for (;;) {
-        Ws_Frame frame = ws.read_frame()!;
+        Ws_Frame_Header frame = ws.read_frame_header()!;
         if (frame.opcode.is_control()) {
             switch (frame.opcode) {
             case ws::OPCODE_CLOSE:
                 return Ws_Error.CLOSE_FRAME_SENT?;
             case ws::OPCODE_PING:
-                ws.send_frame(true, ws::OPCODE_PONG, frame.payload)!;
+                ws.send_frame(true, ws::OPCODE_PONG, ws.read_frame_payload(frame)!)!;
             case ws::OPCODE_PONG:
+                ws.read_frame_payload(frame)!;
                 // Unsolicited PONGs are just ignored
                 break;
             default:
@@ -337,7 +336,7 @@ fn Ws_Message! Ws.read_message(ws)
                     return Ws_Error.UNEXPECTED_OPCODE?;
                 }
             }
-            payload.append(frame.payload);
+            payload.append(ws.read_frame_payload(frame)!);
             if (message.kind == ws::MESSAGE_TEXT) {
                 // Verifying UTF-8
                 while VERIFY: (verify_pos < payload.len()) {
@@ -538,10 +537,12 @@ fn bool Ws_Opcode.is_control(opcode)
     return 0x8 <= opcode && opcode <= 0xF;
 }
 
-struct Ws_Frame {
+struct Ws_Frame_Header {
     bool fin, rsv1, rsv2, rsv3;
     Ws_Opcode opcode;
-    char[] payload;
+    bool masked;
+    usz payload_len;
+    char[4] mask;
 }
 
 fault ExtraUnicodeResult {
