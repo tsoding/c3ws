@@ -284,16 +284,25 @@ fn Ws_Frame_Header! Ws.read_frame_header(ws)
     return frame_header;
 }
 
-fn char[]! Ws.read_frame_payload(ws, Ws_Frame_Header frame_header) {
-    // Read the payload
-    char[] payload = mem::temp_new_array(char, frame_header.payload_len);
-    if (payload.len > 0) {
-        ws.socket.read_entire_buffer(payload)!;
-        if (frame_header.masked) {
-            foreach (i, &x: payload) {
-                *x ^= frame_header.mask[i % 4];
-            }
+fn usz! Ws.read_frame_payload_chunk(ws, Ws_Frame_Header frame_header, char[] payload, usz payload_size)
+{
+    assert(frame_header.payload_len == payload.len);
+    if (payload_size >= payload.len) return 0;
+    char[] unfinished_payload = payload[payload_size..];
+    usz n = ws.socket.read(unfinished_payload)!;
+    if (frame_header.masked) {
+        foreach (i, &x: unfinished_payload) {
+            *x ^= frame_header.mask[(payload_size + i) % 4];
         }
+    }
+    return n;
+}
+
+fn char[]! Ws.read_frame_entire_payload(ws, Ws_Frame_Header frame_header) {
+    char[] payload = mem::temp_new_array(char, frame_header.payload_len);
+    usz payload_size = 0;
+    while (payload_size < payload.len) {
+        payload_size += ws.read_frame_payload_chunk(frame_header, payload, payload_size)!;
     }
     return payload;
 }
@@ -313,9 +322,9 @@ fn Ws_Message! Ws.read_message(ws)
             case ws::OPCODE_CLOSE:
                 return Ws_Error.CLOSE_FRAME_SENT?;
             case ws::OPCODE_PING:
-                ws.send_frame(true, ws::OPCODE_PONG, ws.read_frame_payload(frame)!)!;
+                ws.send_frame(true, ws::OPCODE_PONG, ws.read_frame_entire_payload(frame)!)!;
             case ws::OPCODE_PONG:
-                ws.read_frame_payload(frame)!;
+                ws.read_frame_entire_payload(frame)!;
                 // Unsolicited PONGs are just ignored
                 break;
             default:
@@ -336,7 +345,7 @@ fn Ws_Message! Ws.read_message(ws)
                     return Ws_Error.UNEXPECTED_OPCODE?;
                 }
             }
-            payload.append(ws.read_frame_payload(frame)!);
+            payload.append(ws.read_frame_entire_payload(frame)!);
             if (message.kind == ws::MESSAGE_TEXT) {
                 // Verifying UTF-8
                 while VERIFY: (verify_pos < payload.len()) {
