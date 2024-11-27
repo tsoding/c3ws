@@ -606,6 +606,8 @@ fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 		// Overlong sequence or invalid second.
 		if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
 		uc = uc + c & 0x3F;
+        // NEW: maximum overlong sequence
+        if (uc <= 0b111_1111) return UnicodeResult.INVALID_UTF8?;
 		// NEW: UTF-16 surrogate pairs
 		if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
 		return uc;
@@ -622,6 +624,8 @@ fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 		// Overlong sequence or invalid last
 		if (!uc || c & 0xC0 != 0x80) return UnicodeResult.INVALID_UTF8?;
 		uc = uc + c & 0x3F;
+        // NEW: maximum overlong sequence
+        if (uc <= 0b11111_111111) return UnicodeResult.INVALID_UTF8?;
 		// NEW: UTF-16 surrogate pairs
 		if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
 		return uc;
@@ -642,6 +646,8 @@ fn Char32! utf8_to_char32_fixed(char* ptr, usz* size)
 	uc = uc + c & 0x3F;
 	// NEW: UTF-16 surrogate pairs
 	if (0xD800 <= uc && uc <= 0xDFFF) return UnicodeResult.INVALID_UTF8?;
+    // NEW: maximum overlong sequence
+    if (uc <= 0b1111_111111_111111) return UnicodeResult.INVALID_UTF8?;
 	// NEW: Maximum valid Unicode number
 	if (uc > 0x10FFFF) return UnicodeResult.INVALID_UTF8?;
 	return uc;
