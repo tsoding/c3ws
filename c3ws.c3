@@ -27,29 +27,29 @@ import std::io;
 import std::net::os;
 import std::core::string;
 
-fn void! Socket.read_entire_buffer(&self, char[] buffer) {
+fn void! Ws.read_entire_buffer_raw(&self, char[] buffer) {
     while (buffer.len > 0) {
-        usz n = self.read(buffer)!;
+        usz n = self.socket.read(buffer)!;
         buffer = buffer[n..];
     }
 }
 
-fn void! Socket.write_entire_buffer(&self, char[] buffer) {
+fn void! Ws.write_entire_buffer_raw(&self, char[] buffer) {
     while (buffer.len > 0) {
-        usz n = self.write(buffer)!;
+        usz n = self.socket.write(buffer)!;
         buffer = buffer[n..];
     }
 }
 
-// TODO: move Socket.peek into the std and make a PR to c3 maybe?
-fn usz! Socket.peek(&self, char[] bytes) @dynamic
+// TODO: Add something like Socket.peek to the std and make a PR to c3 maybe?
+fn usz! Ws.peek_raw(&self, char[] bytes) @dynamic
 {
 $if env::WIN32:
     $error("Win32 is not support yet");
-    isz n = libc::recv(self.sock, bytes.ptr, (int)bytes.len, MSG_PEEK);
+    isz n = libc::recv(self.socket.sock, bytes.ptr, (int)bytes.len, MSG_PEEK);
 $else
     const int MSG_PEEK = 2;
-    isz n = libc::recv(self.sock, bytes.ptr, bytes.len, MSG_PEEK);
+    isz n = libc::recv(self.socket.sock, bytes.ptr, bytes.len, MSG_PEEK);
 $endif
     if (n < 0) return os::socket_error()?;
     return (usz)n;
@@ -64,7 +64,7 @@ fn void! Ws.server_handshake(ws)
 {
     // TODO: Ws.server_handshake assumes that request fits into 1024 bytes
     char[1024] buffer;
-    usz buffer_size = ws.socket.peek(&buffer)!;
+    usz buffer_size = ws.peek_raw(&buffer)!;
     String request = (String)buffer[0:buffer_size];
     String sec_websocket_key = ws::parse_sec_websocket_key_from_request(&request)!;
     ws.socket.read(buffer[0:buffer_size - request.len])!;
@@ -99,7 +99,7 @@ fn void! Ws.client_handshake(ws, String host)
 
     // TODO: Ws.client_handshake assumes that response fits into 1024 bytes
     char[1024] buffer;
-    usz buffer_size = ws.socket.peek(&buffer)!;
+    usz buffer_size = ws.peek_raw(&buffer)!;
     String response = (String)buffer[0:buffer_size];
     String sec_websocket_accept = ws::parse_sec_websocket_accept_from_response(&response)!;
     ws.socket.read(buffer[0:buffer_size - response.len])!;
@@ -120,7 +120,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         // NOTE: FIN is always set
         char data = (char) opcode;
         if (fin) data |= (1 << 7);
-        ws.socket.write_entire_buffer((&data)[0:1])!;
+        ws.write_entire_buffer_raw((&data)[0:1])!;
     }
 
     // Send masked and payload length
@@ -130,18 +130,18 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         if (payload.len < 126) {
             char data = CLIENT ? (1 << 7) : 0;
             data |= (char) payload.len;
-            ws.socket.write_entire_buffer((&data)[0:1])!;
+            ws.write_entire_buffer_raw((&data)[0:1])!;
         } else if (payload.len <= ushort.max) {
             char data = CLIENT ? (1 << 7) : 0;
             data |= 126;
-            ws.socket.write_entire_buffer((&data)[0:1])!;
+            ws.write_entire_buffer_raw((&data)[0:1])!;
 
             char[2] len = {
                 (char)(payload.len >> (8 * 1)) & 0xFF,
                 (char)(payload.len >> (8 * 0)) & 0xFF
             };
 
-            ws.socket.write_entire_buffer(&len)!;
+            ws.write_entire_buffer_raw(&len)!;
         } else if (payload.len > ushort.max) {
             char data = CLIENT ? (1 << 7) : 0;
             data |= 127;
@@ -156,8 +156,8 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
                 (char) (payload.len >> (8 * 0)) & 0xFF
             };
 
-            ws.socket.write_entire_buffer((&data)[0:1])!;
-            ws.socket.write_entire_buffer(&len)!;
+            ws.write_entire_buffer_raw((&data)[0:1])!;
+            ws.write_entire_buffer_raw(&len)!;
         }
     }
 
@@ -168,7 +168,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         {
             // TODO: use the rand from the standard library
             foreach (&byte: mask) *byte = (char)(libc::rand() % 0x100);
-            ws.socket.write_entire_buffer(&mask)!;
+            ws.write_entire_buffer_raw(&mask)!;
         }
 
         // Mask the payload and send it
@@ -180,10 +180,10 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
                 chunk_size += 1;
                 i += 1;
             }
-            ws.socket.write_entire_buffer(chunk[0:chunk_size])!;
+            ws.write_entire_buffer_raw(chunk[0:chunk_size])!;
         }
     } else {
-        ws.socket.write_entire_buffer(payload)!;
+        ws.write_entire_buffer_raw(payload)!;
     }
 }
 
@@ -217,7 +217,7 @@ fn Ws_Frame_Header! Ws.read_frame_header(ws)
     char[2] header;
 
     // Read the header
-    ws.socket.read_entire_buffer(&header)!;
+    ws.read_entire_buffer_raw(&header)!;
     Ws_Frame_Header frame_header = {
         .fin = (bool) ws::fIN(header),
         .rsv1 = (bool) ws::rSV1(header),
@@ -234,14 +234,14 @@ fn Ws_Frame_Header! Ws.read_frame_header(ws)
         switch (len) {
         case 126:
             char[2] ext_len = {};
-            ws.socket.read_entire_buffer(&ext_len)!;
+            ws.read_entire_buffer_raw(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 frame_header.payload_len = (frame_header.payload_len << 8) | ext_len[i];
             }
         case 127:
             char[8] ext_len = {};
-            ws.socket.read_entire_buffer(&ext_len)!;
+            ws.read_entire_buffer_raw(&ext_len)!;
 
             for (usz i = 0; i < ext_len.len; ++i) {
                 frame_header.payload_len = (frame_header.payload_len << 8) | ext_len[i];
@@ -279,7 +279,7 @@ fn Ws_Frame_Header! Ws.read_frame_header(ws)
     }
 
     // Read the mask if masked
-    if (frame_header.masked) ws.socket.read_entire_buffer(&frame_header.mask)!;
+    if (frame_header.masked) ws.read_entire_buffer_raw(&frame_header.mask)!;
 
     return frame_header;
 }
