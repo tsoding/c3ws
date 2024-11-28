@@ -39,7 +39,7 @@ fn void serve(TcpSocket socket) {
 
     $if CLIENT:
         const String PEER_WHO = "Server";
-        if (catch error = ws.client_handshake(config::HOST)) {
+        if (catch error = ws.client_handshake(string::tformat("%s:%d", config::HOST, config::PORT))) {
             io::printfn("ERROR: handshake failed: %s", error);
             return;
         }

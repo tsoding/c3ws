@@ -30,7 +30,7 @@ fn int main(String[] args)
         ws.send_frame(true, ws::OPCODE_CLOSE, {})!!;
         ws.socket.close()!!;
     }
-    ws.client_handshake(config::HOST)!!;
+    ws.client_handshake(string::tformat("%s:%d", config::HOST, config::PORT))!!;
     ws.send_text(message)!!;
     io::printfn("Message from server: %s", (String)ws.read_message()!!.payload);
 

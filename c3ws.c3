@@ -473,6 +473,7 @@ fn String! parse_sec_websocket_accept_from_response(String *response) {
     const String HEADER_SEP = ":";
 
     // TODO: verify the response status line
+    //   If the status code is an error one, log the message
     if (try index = response.index_of(LINE_SEP)) {
         (*response) = (*response)[index+LINE_SEP.len..];
     } else {
