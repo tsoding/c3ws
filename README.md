@@ -18,10 +18,10 @@ $ ./example_echo_server
 
 In another terminal
 ```console
-$ ./example_client "Hello, World"
+$ ./example_send_client "Hello, World"
 ```
 
 You can also connect to the server from a browser:
 ```console
-$ firefox ./example_client.html
+$ firefox ./example_send_client.html
 ```
