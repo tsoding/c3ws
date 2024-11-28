@@ -1,4 +1,4 @@
-module example::client;
+module example::send::client;
 import c3ws;
 import std::io;
 import std::net, std::os, std::time, libc;
