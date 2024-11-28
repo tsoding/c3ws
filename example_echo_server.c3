@@ -1,4 +1,4 @@
-module example::server;
+module example::echo::server;
 import c3ws, c3ws::ws;
 import std::io;
 import std::net::tcp, std::net::os;

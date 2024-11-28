@@ -13,7 +13,7 @@ $ ./build.sh # We will use the official C3 build system eventually I swear
 
 In one terminal:
 ```console
-$ ./example_server
+$ ./example_echo_server
 ```
 
 In another terminal
