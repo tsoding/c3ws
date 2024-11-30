@@ -2,6 +2,7 @@ module example::echo::server;
 import c3ws, c3ws::ws;
 import std::io;
 import std::net::tcp, std::net::os;
+import std::thread;
 import example::echo;
 import example::config;
 import libc;
@@ -28,6 +29,12 @@ fn void main() {
     while ACCEPT: (try client = tcp::accept(&server)) {
         // TODO: apply SO_LINGER to the client sockets
         io::printfn("INFO: Accepted connection");
-        echo::serve(<false>)(client);
+        Thread client_thread;
+        client_thread.create(fn int(void *arg) {
+            TcpSocket client = *(TcpSocket*)arg;
+            mem::free(arg);
+            echo::serve(<false>)(client);
+            return 0;
+        }, mem::new($typeof(client), client))!!;
     }
 }
