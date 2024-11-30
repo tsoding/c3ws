@@ -9,24 +9,28 @@
         <button onclick="sendMessage()">Send</button>
         <p id=response></p>
         <script>
+            let ws = null;
             function sendMessage() {
-                const ws = new WebSocket("ws://localhost:9001/");
-                ws.onerror = (e) => {
-                    console.log("WebSocket ERROR", e);
-                    response.innerText = `WebSocket connection to server failed`;
-                };
-                ws.onopen = (e) => {
-                    console.log("WebSocket OPEN", e);
-                    ws.send(message.value);
-                };
-                ws.onmessage = (e) => {
-                    console.log("WebSocket MESSAGE", e);
-                    response.innerText = `Response from the server: ${e.data}`;
-                    ws.close();
-                };
-                ws.onclose = (e) => {
-                    console.log("WebSocket CLOSE", e);
-                };
+                if (ws === null) {
+                    ws = new WebSocket("ws://localhost:9001/");
+                    ws.onerror = (e) => {
+                        console.log("WebSocket ERROR", e);
+                        response.innerText = `WebSocket connection to server failed`;
+                    };
+                    ws.onopen = (e) => {
+                        console.log("WebSocket OPEN", e);
+                    };
+                    ws.onmessage = (e) => {
+                        console.log("WebSocket MESSAGE", e);
+                        // TODO: append the message instead of replacing it.
+                        response.innerText = `Response from the server: ${e.data}`;
+                    };
+                    ws.onclose = (e) => {
+                        console.log("WebSocket CLOSE", e);
+                        ws = null;
+                    };
+                }
+                ws.send(message.value);
             }
         </script>
     </body>
