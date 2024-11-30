@@ -51,10 +51,6 @@ fn void serve(TcpSocket socket) {
         }
     $endif
 
-    // TODO: Turn example_server into an asynchronous echo server that just continuosly echos all the client messages
-    // until the client closes the connection. I think some of the Autobahn Test Cases depends on this exact behavior.
-    // This may require implementing proper periodic pinging of the clients and closing those who fell off.
-    // (Which I believe is also part of some of the Autobahn Test Cases).
     for ECHO: (usz i = 0; ; ++i) {
         Ws_Message! message = ws.read_message();
         if (catch error = message) {
@@ -65,7 +61,7 @@ fn void serve(TcpSocket socket) {
             }
             // TODO: Tuck sending the CLOSE frame under some abstraction of "Closing the WebSocket".
             // Maybe some sort of ws.close() method.
-            // TODO: The server may give a reason of the close via the status code
+            // TODO: The sender may give a reason of the close via the status code
             // See RFC6466, Section 7.4
             defer (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
             break ECHO;

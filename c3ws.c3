@@ -80,17 +80,18 @@ fn void! Ws.server_handshake(ws)
 }
 
 // https://datatracker.ietf.org/doc/html/rfc6455#section-1.3
-// TODO: Ws.client_handshake should accept a URL
-fn void! Ws.client_handshake(ws, String host)
+// TODO: Ws.client_handshake should just accept a ws/wss URL
+fn void! Ws.client_handshake(ws, String host, String endpoint = "/")
 {
     DString handshake;
     handshake.new_init(1024, allocator::temp());
     // TODO: customizable resource path
-    handshake.append("GET / HTTP/1.1\r\n");
+    handshake.appendf("GET %s HTTP/1.1\r\n", endpoint);
     handshake.appendf("Host: %s\r\n", host);
     handshake.append("Upgrade: websocket\r\n");
     handshake.append("Connection: Upgrade\r\n");
-    // TODO: custom WebSocket key
+    // TODO: Custom WebSocket key
+    // Maybe even hardcode something that identifies c3ws?
     handshake.append("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n");
     handshake.append("Sec-WebSocket-Version: 13\r\n");
     handshake.append("\r\n");

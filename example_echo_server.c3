@@ -19,6 +19,10 @@ fn void main() {
         libc::sigaction(libc::SIGPIPE, &act, null);
     $endif
 
+    // TODO: Turn example_server into an asynchronous echo server that just continuosly echos all the client messages
+    // until the client closes the connection. I think some of the Autobahn Test Cases depends on this exact behavior.
+    // This may require implementing proper periodic pinging of the clients and closing those who fell off.
+    // (Which I believe is also part of some of the Autobahn Test Cases).
     TcpServerSocket server = tcp::listen(config::HOST, config::PORT, 10, REUSEADDR)!!;
     io::printfn("Listening to %s:%d", config::HOST, config::PORT);
     while ACCEPT: (try client = tcp::accept(&server)) {
