@@ -416,11 +416,7 @@ macro char pAYLOAD_LEN(char[2] header) => ((header)[1] & 0x7F);
 fn String compute_sec_websocket_accept(String sec_websocket_key)
 {
     char[sha1::HASH_BYTES] src = sha1::hash(string::tformat("%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11", sec_websocket_key));
-    Base64Encoder encoder;
-    encoder.init(base64::STD_ALPHABET)!!;
-    char[] dst = mem::temp_new_array(char, encoder.encode_len(src.len));
-    encoder.encode(&src, dst)!!;
-    return (String)dst;
+    return base64::encode(&src, allocator::temp());
 }
 
 fn String! parse_sec_websocket_key_from_request(String *request) {
