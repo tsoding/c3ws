@@ -405,13 +405,13 @@ fn Ws_Message! Ws.read_message(ws)
                     // Verifying UTF-8
                     while VERIFY: (verify_pos < payload.len()) {
                         usz size = payload.len() - verify_pos;
-                        if (catch excuse = ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)) {
+                        if (catch excuse = ws::utf8_to_char32_fixed(&payload[verify_pos], &size)) {
                             case ExtraUnicodeResult.SHORT_UTF8:
                                 if (!frame.fin) {
                                     usz saved_len = payload.len();
                                     payload.extend_unfinished_utf8(verify_pos);
                                     size = payload.len() - verify_pos;
-                                    ws::utf8_to_char32_fixed(&payload.str_view()[verify_pos], &size)!;
+                                    ws::utf8_to_char32_fixed(&payload[verify_pos], &size)!;
                                     payload.chop(saved_len);
                                     break VERIFY; // Tolerating the unfinished UTF-8 sequences if the message is unfinished
                                 }
