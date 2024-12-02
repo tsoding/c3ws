@@ -18,7 +18,7 @@
 // LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-module c3ws(<Socket, CLIENT, CHUNK_SIZE>);
+module c3ws(<Socket, CLIENT>);
 
 // TODO: run autobahn testsuit on CI and deploy reports to github pages
 
@@ -26,6 +26,9 @@ import libc;
 import std::io;
 import std::net::os;
 import std::core::string;
+
+// TODO: Make the CHUNK_SIZE customizable somehow, but not via generics (they are too noisy)
+const int CHUNK_SIZE = 1024;
 
 fn void! Ws.read_entire_buffer_raw(&self, char[] buffer) {
     while (buffer.len > 0) {

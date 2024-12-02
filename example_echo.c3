@@ -11,8 +11,6 @@ const CInt SHUT_WR = 1;
 const CInt SHUT_RDWR = 2;
 extern fn CInt shutdown(CInt sockfd, CInt how);
 
-const int CHUNK_SIZE = 1024;
-
 fn void serve(TcpSocket socket) {
     usz temp_mark = allocator::temp().mark();
     defer {
@@ -32,7 +30,7 @@ fn void serve(TcpSocket socket) {
         allocator::temp().reset(temp_mark);
     }
 
-    Ws(<TcpSocket, CLIENT, CHUNK_SIZE>) ws = {
+    Ws(<TcpSocket, CLIENT>) ws = {
         .socket = socket,
         .debug = true,
     };
