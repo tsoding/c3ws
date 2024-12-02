@@ -6,6 +6,6 @@ import std::net::tcp;
 
 fn int main() {
     TcpSocket client = tcp::connect(config::HOST, config::PORT)!!;
-    echo::serve(<true>)(client);
+    echo::serve(client, true);
     return 0;
 }

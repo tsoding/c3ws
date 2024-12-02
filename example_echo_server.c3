@@ -33,7 +33,7 @@ fn void main() {
         client_thread.create(fn int(void *arg) {
             TcpSocket client = *(TcpSocket*)arg;
             mem::free(arg);
-            echo::serve(<false>)(client);
+            echo::serve(client, false);
             return 0;
         }, mem::new($typeof(client), client))!!;
     }

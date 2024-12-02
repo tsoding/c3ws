@@ -1,4 +1,4 @@
-module example::echo(<CLIENT>);
+module example::echo;
 
 import std::io;
 import std::net::tcp;
@@ -11,7 +11,7 @@ const CInt SHUT_WR = 1;
 const CInt SHUT_RDWR = 2;
 extern fn CInt shutdown(CInt sockfd, CInt how);
 
-fn void serve(TcpSocket socket) {
+fn void serve(TcpSocket socket, bool client) {
     usz temp_mark = allocator::temp().mark();
     defer {
         // Base on the ideas from https://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
@@ -30,41 +30,43 @@ fn void serve(TcpSocket socket) {
         allocator::temp().reset(temp_mark);
     }
 
-    Ws(<TcpSocket, CLIENT>) ws = {
+    Ws(<TcpSocket>) ws = {
         .socket = socket,
         .debug = true,
+        .client = client,
     };
 
-    $if CLIENT:
-        const String PEER_WHO = "Server";
+    String peer_who;
+    if (ws.client) {
+        peer_who = "Server";
         if (catch error = ws.client_handshake(string::tformat("%s:%d", config::HOST, config::PORT))) {
             io::printfn("ERROR: handshake failed: %s", error);
             return;
         }
-    $else
-        const String PEER_WHO = "Client";
+    } else {
+        peer_who = "Client";
         if (catch error = ws.server_handshake()) {
             io::printfn("ERROR: handshake failed: %s", error);
             return;
         }
-    $endif
+    }
 
     for ECHO: (usz i = 0; ; ++i) {
         Ws_Message! message = ws.read_message();
         if (catch error = message) {
             if (error == Ws_Error.CLOSE_FRAME_SENT) {
-                io::printfn("INFO: %s closed connection", PEER_WHO);
+                io::printfn("INFO: %s closed connection", peer_who);
             } else {
-                io::printfn("ERROR: %s connection failed: %s", PEER_WHO, error);
+                io::printfn("ERROR: %s connection failed: %s", peer_who, error);
             }
             // TODO: Tuck sending the CLOSE frame under some abstraction of "Closing the WebSocket".
             // Maybe some sort of ws.close() method.
             // TODO: The sender may give a reason of the close via the status code
             // See RFC6466, Section 7.4
-            defer (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
+            (void)ws.send_frame(true, ws::OPCODE_CLOSE, {});
             break ECHO;
         }
-        io::printfn("INFO: %d: %s sent: %d bytes", i, PEER_WHO, message.payload.len);
+        io::printfn("INFO: %d: %s sent: %d bytes", i, peer_who, message.payload.len);
         (void)ws.send_message(message.kind, message.payload);
         allocator::temp().reset(temp_mark);
     }

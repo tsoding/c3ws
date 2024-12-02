@@ -25,7 +25,10 @@ fn int main(String[] args)
 
     String message = @shift(args);
 
-    Ws(<TcpSocket, true>) ws = { .socket = tcp::connect(config::HOST, config::PORT)!! };
+    Ws(<TcpSocket>) ws = {
+        .socket = tcp::connect(config::HOST, config::PORT)!!,
+        .client = true,
+    };
     defer {
         ws.send_frame(true, ws::OPCODE_CLOSE, {})!!;
         ws.socket.close()!!;

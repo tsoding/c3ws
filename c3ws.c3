@@ -18,7 +18,7 @@
 // LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-module c3ws(<Socket, CLIENT>);
+module c3ws(<Socket>);
 
 // TODO: run autobahn testsuit on CI and deploy reports to github pages
 
@@ -61,6 +61,7 @@ $endif
 struct Ws {
     Socket socket;
     bool debug; // Enable debug logging
+    bool client;
 }
 
 fn void! Ws.server_handshake(ws)
@@ -132,11 +133,11 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         // TODO: do we need to reverse the bytes on a machine with a different endianess than x86?
         // NOTE: client frames are always masked
         if (payload.len < 126) {
-            char data = CLIENT ? (1 << 7) : 0;
+            char data = ws.client ? (1 << 7) : 0;
             data |= (char) payload.len;
             ws.write_entire_buffer_raw((&data)[0:1])!;
         } else if (payload.len <= ushort.max) {
-            char data = CLIENT ? (1 << 7) : 0;
+            char data = ws.client ? (1 << 7) : 0;
             data |= 126;
             ws.write_entire_buffer_raw((&data)[0:1])!;
 
@@ -147,7 +148,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
 
             ws.write_entire_buffer_raw(&len)!;
         } else if (payload.len > ushort.max) {
-            char data = CLIENT ? (1 << 7) : 0;
+            char data = ws.client ? (1 << 7) : 0;
             data |= 127;
             char[8] len = {
                 (char) (payload.len >> (8 * 7)) & 0xFF,
@@ -165,7 +166,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
         }
     }
 
-    if (CLIENT) {
+    if (ws.client) {
         char[4] mask = {};
 
         // Generate and send mask
