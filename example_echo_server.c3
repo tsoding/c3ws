@@ -31,9 +31,14 @@ fn void main() {
         io::printfn("INFO: Accepted connection");
         Thread client_thread;
         client_thread.create(fn int(void *arg) {
-            TcpSocket client = *(TcpSocket*)arg;
+            Ws(<TcpSocket>)! ws = c3ws::accept(<TcpSocket>)(*(TcpSocket*)arg);
             mem::free(arg);
-            echo::serve(client, false);
+            if (catch error = ws) {
+                io::printfn("ERROR: could not accept WebSocket connection: %s", error);
+                return 1;
+            }
+            ws.debug = true;
+            echo::serve(<TcpSocket>)(ws);
             return 0;
         }, mem::new($typeof(client), client))!!;
     }

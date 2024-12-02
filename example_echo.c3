@@ -1,56 +1,18 @@
-module example::echo;
+module example::echo(<Socket>);
 
 import std::io;
 import std::net::tcp;
 import c3ws::ws;
 import example::config;
 
-// TODO: consider submitting these definitions as a PR to c3c
-const CInt SHUT_RD = 0;
-const CInt SHUT_WR = 1;
-const CInt SHUT_RDWR = 2;
-extern fn CInt shutdown(CInt sockfd, CInt how);
-
-fn void serve(TcpSocket socket, bool client) {
+fn void serve(Ws(<Socket>) ws) {
     usz temp_mark = allocator::temp().mark();
     defer {
-        // Base on the ideas from https://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
-        // Informing the OS that we are not planning to send anything anymore
-        shutdown(socket.sock, SHUT_WR);
-        // Depleting input before closing socket, so the OS does not send RST just because we have some input pending on close
-        char[1024] buffer;
-        while (try n = socket.read(buffer[0..])) {
-            if (n == 0) break;
-        }
-
-        // TODO: consider depleting the send buffer on Linux with ioctl(fd, SIOCOUTQ, &outstanding)
-
-        // Actually destroying the socket
-        (void)socket.close();
+        (void)ws.close();
         allocator::temp().reset(temp_mark);
     }
 
-    Ws(<TcpSocket>) ws = {
-        .socket = socket,
-        .debug = true,
-        .client = client,
-    };
-
-    String peer_who;
-    if (ws.client) {
-        peer_who = "Server";
-        if (catch error = ws.client_handshake(string::tformat("%s:%d", config::HOST, config::PORT))) {
-            io::printfn("ERROR: handshake failed: %s", error);
-            return;
-        }
-    } else {
-        peer_who = "Client";
-        if (catch error = ws.server_handshake()) {
-            io::printfn("ERROR: handshake failed: %s", error);
-            return;
-        }
-    }
-
+    String peer_who = ws.client ? "Server" : "Client";
     for ECHO: (usz i = 0; ; ++i) {
         Ws_Message! message = ws.read_message();
         if (catch error = message) {

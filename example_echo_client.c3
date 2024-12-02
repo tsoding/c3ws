@@ -6,6 +6,7 @@ import std::net::tcp;
 
 fn int main() {
     TcpSocket client = tcp::connect(config::HOST, config::PORT)!!;
-    echo::serve(client, true);
+    Ws(<TcpSocket>) ws = c3ws::connect(<TcpSocket>)(client, string::tformat("%s:%d", config::HOST, config::PORT))!!;
+    echo::serve(<TcpSocket>)(ws);
     return 0;
 }

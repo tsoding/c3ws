@@ -25,10 +25,36 @@ module c3ws(<Socket>);
 import libc;
 import std::io;
 import std::net::os;
+import std::net::tcp;
 import std::core::string;
 
-// TODO: Make the CHUNK_SIZE customizable somehow, but not via generics (they are too noisy)
+// TODO: Make the CHUNK_SIZE customizable somehow, but not via generics (they are too noisy).
+// Maybe make it a runtime parameter of Ws, like the client flag.
 const int CHUNK_SIZE = 1024;
+
+// TODO: consider submitting these definitions as a PR to c3c
+const CInt SHUT_RD = 0;
+const CInt SHUT_WR = 1;
+const CInt SHUT_RDWR = 2;
+extern fn CInt shutdown(CInt sockfd, CInt how);
+
+fn void! Ws.close(&ws) {
+    // Base on the ideas from https://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+    $assert(Socket.typeid == TcpSocket.typeid); // TODO: support Socket.shutdown on the level of the interface
+    // Informing the OS that we are not planning to send anything anymore
+    shutdown(ws.socket.sock, SHUT_WR);
+    // Depleting input before closing socket, so the OS does not send RST just because we have some input pending on close
+    char[1024] buffer;
+    while (true) {
+        usz n = ws.socket.read(buffer[0..])!;
+        if (n == 0) break;
+    }
+
+    // TODO: consider depleting the send buffer on Linux with ioctl(fd, SIOCOUTQ, &outstanding)
+
+    // Actually destroying the socket
+    ws.socket.close()!;
+}
 
 fn void! Ws.read_entire_buffer_raw(&self, char[] buffer) {
     while (buffer.len > 0) {
@@ -62,6 +88,25 @@ struct Ws {
     Socket socket;
     bool debug; // Enable debug logging
     bool client;
+}
+
+fn Ws! accept(Socket socket) {
+    Ws ws = {
+        .socket = socket,
+        .client = false,
+    };
+    ws.server_handshake()!;
+    return ws;
+}
+
+// TODO: connect should just accept a ws/wss URL
+fn Ws! connect(Socket socket, String host, String endpoint = "/") {
+    Ws ws = {
+        .socket = socket,
+        .client = true,
+    };
+    ws.client_handshake(host, endpoint)!;
+    return ws;
 }
 
 fn void! Ws.server_handshake(ws)
