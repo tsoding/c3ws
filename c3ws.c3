@@ -90,6 +90,7 @@ struct Ws {
     bool client;
 }
 
+// TODO: make nonblocking version of c3ws::accept
 fn Ws! accept(Socket socket) {
     Ws ws = {
         .socket = socket,
@@ -431,6 +432,146 @@ fn Ws_Message! Ws.read_message(ws)
 
     return message;
 }
+
+module c3ws::async(<Socket>);
+import c3ws;
+import std::io;
+
+struct Buffer {
+    usz read;
+    usz len;
+    usz capacity;
+    char* ptr;
+}
+
+fn void Buffer.reset(&self, usz capacity)
+{
+    self.read = 0;
+    self.len = capacity;
+    if (capacity > self.capacity) {
+        self.ptr = realloc(self.ptr, capacity);
+        self.capacity = capacity;
+    }
+}
+
+// **************
+//  ^    ^       ^
+//  read len     capacity
+
+fn void! Buffer.update(&self, Ws(<Socket>) *ws) {
+    if (self.read >= self.len) return;
+    char[] buf = (self.ptr + self.read)[:(self.len - self.read)];
+    usz n = ws.socket.read(buf)!;
+    self.read += n;
+    if (self.read < self.len) return IoError.WOULD_BLOCK?;
+}
+
+enum Read_Frame_Header_State {
+    SMOL_HEADER,
+    EXT_LENGTH,
+    MASK,
+    DONE,
+}
+
+struct Read_Frame_Header_Task {
+    Read_Frame_Header_State state;
+    Buffer buffer;
+    Ws_Frame_Header frame_header;
+}
+
+fn void Read_Frame_Header_Task.reset(&self)
+{
+    self.state = SMOL_HEADER;
+    self.buffer.reset(2);
+}
+
+fn void! Read_Frame_Header_Task.update(&self, Ws(<Socket>) *ws)
+{
+    self.buffer.update(ws)!;
+
+    switch (self.state) {
+    case SMOL_HEADER:
+        char[2] header = {
+            self.buffer.ptr[0],
+            self.buffer.ptr[1],
+        };
+        self.frame_header = {
+            .fin = (bool) ws::fIN(header),
+            .rsv1 = (bool) ws::rSV1(header),
+            .rsv2 = (bool) ws::rSV2(header),
+            .rsv3 = (bool) ws::rSV3(header),
+            .opcode = (Ws_Opcode) ws::oPCODE(header),
+            .masked = (bool) ws::mASK(header),
+        };
+
+        // RFC 6455 - Section 5.2:
+        // >  RSV1, RSV2, RSV3:  1 bit each
+        // >
+        // >     MUST be 0 unless an extension is negotiated that defines meanings
+        // >     for non-zero values.  If a nonzero value is received and none of
+        // >     the negotiated extensions defines the meaning of such a nonzero
+        // >     value, the receiving endpoint MUST _Fail the WebSocket
+        // >     Connection_.
+        if (self.frame_header.rsv1 || self.frame_header.rsv2 || self.frame_header.rsv3) {
+            return Ws_Error.RESERVED_BITS_NOT_NEGOTIATED?;
+        }
+
+        // TODO: do we need to reverse the bytes on a machine with a different endianess than x86?
+        char len = ws::pAYLOAD_LEN(header);
+        switch (len) {
+        case 126:
+            self.state = EXT_LENGTH;
+            self.buffer.reset(2);
+            return IoError.WOULD_BLOCK?;
+        case 127:
+            self.state = EXT_LENGTH;
+            self.buffer.reset(8);
+            return IoError.WOULD_BLOCK?;
+        default:
+            self.frame_header.payload_len = len;
+            if (self.frame_header.masked) {
+                self.state = MASK;
+                self.buffer.reset(4);
+                return IoError.WOULD_BLOCK?;
+            } else {
+                self.state = DONE;
+                self.buffer.reset(0);
+                return;
+            }
+        }
+    case EXT_LENGTH:
+        for (usz i = 0; i < self.buffer.len; ++i) {
+            self.frame_header.payload_len = (self.frame_header.payload_len << 8) | self.buffer.ptr[i];
+        }
+
+        // RFC 6455 - Section 5.5:
+        // > All control frames MUST have a payload length of 125 bytes or less
+        // > and MUST NOT be fragmented.
+        if (self.frame_header.opcode.is_control() && (self.frame_header.payload_len > 125 || !self.frame_header.fin)) {
+            return Ws_Error.CONTROL_FRAME_TOO_BIG?;
+        }
+
+        if (self.frame_header.masked) {
+            self.state = MASK;
+            self.buffer.reset(4);
+            return IoError.WOULD_BLOCK?;
+        } else {
+            self.state = DONE;
+            self.buffer.reset(0);
+            return;
+        }
+    case MASK:
+        for (usz i = 0; i < self.frame_header.mask.len; ++i) {
+            self.frame_header.mask[i] = self.buffer.ptr[i];
+        }
+        self.state = DONE;
+        self.buffer.reset(0);
+        return;
+    case DONE:
+        return;
+    }
+}
+
 
 module c3ws::ws;
 
