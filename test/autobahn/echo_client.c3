@@ -1,6 +1,6 @@
-module example::echo::client;
-import example::echo,
-       example::config;
+module test::autobahn::echo::client;
+import test::autobahn::echo,
+       test::autobahn::config;
 import c3ws;
 import std::net::tcp;
 

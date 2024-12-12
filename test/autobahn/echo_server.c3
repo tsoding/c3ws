@@ -1,10 +1,10 @@
-module example::echo::server;
+module test::autobahn::echo::server;
 import c3ws, c3ws::ws;
 import std::io;
 import std::net::tcp, std::net::os;
 import std::thread;
-import example::echo;
-import example::config;
+import test::autobahn::echo;
+import test::autobahn::config;
 import libc;
 
 // TODO: consider submitting these definitions as a PR to c3c

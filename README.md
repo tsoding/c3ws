@@ -13,15 +13,15 @@ $ ./build.sh # We will use the official C3 build system eventually I swear
 
 In one terminal:
 ```console
-$ ./example_echo_server
+$ ./build/autobahn_echo_server
 ```
 
 In another terminal
 ```console
-$ ./example_send_client "Hello, World"
+$ ./build/example_send_client "Hello, World" localhost 6969
 ```
 
 You can also connect to the server from a browser:
 ```console
-$ firefox ./example_send_client.html
+$ firefox ./tools/example_send_client.html
 ```

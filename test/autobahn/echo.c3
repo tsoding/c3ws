@@ -1,9 +1,9 @@
-module example::echo(<Socket>);
+module test::autobahn::echo(<Socket>);
 
 import std::io;
 import std::net::tcp;
 import c3ws::ws;
-import example::config;
+import test::autobahn::config;
 
 fn void serve(Ws(<Socket>) ws) {
     usz temp_mark = allocator::temp().mark();
