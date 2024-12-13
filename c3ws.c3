@@ -458,12 +458,16 @@ fn void Buffer.reset(&self, usz capacity)
 //  ^    ^       ^
 //  read len     capacity
 
-fn void! Buffer.update(&self, Ws(<Socket>) *ws) {
-    if (self.read >= self.len) return;
+fn bool! Buffer.update(&self, Ws(<Socket>) *ws) {
+    if (self.read >= self.len) return true;
     char[] buf = (self.ptr + self.read)[:(self.len - self.read)];
-    usz n = ws.socket.read(buf)!;
+    usz! n = ws.socket.read(buf);
+    if (catch error = n) {
+        case IoError.WOULD_BLOCK: return false;
+        default:                  return error?;
+    }
     self.read += n;
-    if (self.read < self.len) return IoError.WOULD_BLOCK?;
+    return self.read >= self.len;
 }
 
 enum Read_Frame_Header_State {
@@ -485,9 +489,9 @@ fn void Read_Frame_Header_Task.reset(&self)
     self.buffer.reset(2);
 }
 
-fn void! Read_Frame_Header_Task.update(&self, Ws(<Socket>) *ws)
+fn bool! Read_Frame_Header_Task.update(&self, Ws(<Socket>) *ws)
 {
-    self.buffer.update(ws)!;
+    if (!self.buffer.update(ws)!) return false;
 
     switch (self.state) {
     case SMOL_HEADER:
@@ -522,21 +526,21 @@ fn void! Read_Frame_Header_Task.update(&self, Ws(<Socket>) *ws)
         case 126:
             self.state = EXT_LENGTH;
             self.buffer.reset(2);
-            return IoError.WOULD_BLOCK?;
+            return false;
         case 127:
             self.state = EXT_LENGTH;
             self.buffer.reset(8);
-            return IoError.WOULD_BLOCK?;
+            return false;
         default:
             self.frame_header.payload_len = len;
             if (self.frame_header.masked) {
                 self.state = MASK;
                 self.buffer.reset(4);
-                return IoError.WOULD_BLOCK?;
+                return false;
             } else {
                 self.state = DONE;
                 self.buffer.reset(0);
-                return;
+                return true;
             }
         }
     case EXT_LENGTH:
@@ -554,11 +558,11 @@ fn void! Read_Frame_Header_Task.update(&self, Ws(<Socket>) *ws)
         if (self.frame_header.masked) {
             self.state = MASK;
             self.buffer.reset(4);
-            return IoError.WOULD_BLOCK?;
+            return false;
         } else {
             self.state = DONE;
             self.buffer.reset(0);
-            return;
+            return true;
         }
     case MASK:
         for (usz i = 0; i < self.frame_header.mask.len; ++i) {
@@ -566,9 +570,9 @@ fn void! Read_Frame_Header_Task.update(&self, Ws(<Socket>) *ws)
         }
         self.state = DONE;
         self.buffer.reset(0);
-        return;
+        return true;
     case DONE:
-        return;
+        return true;
     }
 }
 

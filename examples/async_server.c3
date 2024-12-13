@@ -32,21 +32,13 @@ fn int main() {
         ws.socket.sock.set_non_blocking(true)!!;
         Read_Frame_Header_Task(<TcpSocket>) task;
         task.reset();
-        while (true) {
-            if (catch error = task.update(&ws)) {
-                case IoError.WOULD_BLOCK:
-                    io::printfn("INFO: Read_Frame_Header_Task in progress: %s", task.state);
-                default:
-                    io::printfn("ERROR: Read_Frame_Header_Task has failed: %s", error);
-                    return 1;
-            } else {
-                io::printfn("INFO: Read_Frame_Header_Task finished: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d",
-                    task.frame_header.fin,
-                    task.frame_header.opcode.name(),
-                    task.frame_header.rsv1, task.frame_header.rsv2, task.frame_header.rsv3,
-                    task.frame_header.payload_len);
-                return 0;
-            }
+        while (!task.update(&ws)!!) {
+            io::printfn("INFO: Read_Frame_Header_Task in progress: %s", task.state);
         }
+        io::printfn("INFO: Read_Frame_Header_Task finished: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d",
+            task.frame_header.fin,
+            task.frame_header.opcode.name(),
+            task.frame_header.rsv1, task.frame_header.rsv2, task.frame_header.rsv3,
+            task.frame_header.payload_len);
     }
 }
