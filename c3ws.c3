@@ -437,14 +437,14 @@ module c3ws::async(<Socket>);
 import c3ws;
 import std::io;
 
-struct Buffer {
+struct Read_Buffer_Task {
     usz read;
     usz len;
     usz capacity;
     char* ptr;
 }
 
-fn void Buffer.reset(&self, usz capacity)
+fn void Read_Buffer_Task.reset(&self, usz capacity)
 {
     self.read = 0;
     self.len = capacity;
@@ -458,7 +458,7 @@ fn void Buffer.reset(&self, usz capacity)
 //  ^    ^       ^
 //  read len     capacity
 
-fn bool! Buffer.update(&self, Ws(<Socket>) *ws) {
+fn bool! Read_Buffer_Task.update(&self, Ws(<Socket>) *ws) {
     if (self.read >= self.len) return true;
     char[] buf = (self.ptr + self.read)[:(self.len - self.read)];
     usz! n = ws.socket.read(buf);
@@ -479,7 +479,7 @@ enum Read_Frame_Header_State {
 
 struct Read_Frame_Header_Task {
     Read_Frame_Header_State state;
-    Buffer buffer;
+    Read_Buffer_Task buffer;
     Ws_Frame_Header frame_header;
 }
 
