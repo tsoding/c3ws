@@ -506,6 +506,24 @@ fn bool! Read_Buffer_Task.update(&self, Ws(<Socket>) *ws, bool masked = false, c
     return self.read >= self.len;
 }
 
+struct Write_Buffer_Task {
+    char[] data;
+    usz wrote;
+}
+
+fn bool! Write_Buffer_Task.update(&self, Ws(<Socket>) *ws)
+{
+    if (self.wrote >= self.data.len) return true;
+    char[] buffer = self.data[:self.data.len - self.wrote];
+    usz! n = ws.socket.write(buffer);
+    if (catch error = n) {
+        case IoError.WOULD_BLOCK: return false;
+        default: return error?;
+    }
+    self.wrote += n;
+    return self.wrote >= self.data.len;
+}
+
 enum Read_Frame_Header_State {
     SMOL_HEADER,
     EXT_LENGTH,
