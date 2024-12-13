@@ -444,27 +444,63 @@ struct Read_Buffer_Task {
     char* ptr;
 }
 
-fn void Read_Buffer_Task.reset(&self, usz capacity)
+fn char[] Read_Buffer_Task.view(&self) {
+    return self.ptr[:self.len];
+}
+
+fn void Read_Buffer_Task.extend_unfinished_utf8(&self, usz pos)
 {
-    self.read = 0;
-    self.len = capacity;
+    char c = self.view()[pos];
+    usz size = 0;
+    if ((c & 0x80) == 0) {
+        size = 1;
+    } else if ((c & 0xE0) == 0xC0) {
+        size = 2;
+    } else if ((c & 0xF0) == 0xE0) {
+        size = 3;
+    } else {
+        size = 4;
+    }
+    while (self.read - pos < size) self.append_char(0b1000_0000);
+}
+
+fn void Read_Buffer_Task.append_char(&self, char x)
+{
+    if (self.read >= self.capacity) self.reserve(self.capacity + 1);
+    self.ptr[self.read++] = x;
+}
+
+fn void Read_Buffer_Task.reserve(&self, usz capacity)
+{
     if (capacity > self.capacity) {
         self.ptr = realloc(self.ptr, capacity);
         self.capacity = capacity;
     }
 }
 
+fn void Read_Buffer_Task.reset(&self, usz capacity)
+{
+    self.read = 0;
+    self.len = capacity;
+    self.reserve(capacity);
+}
+
 // **************
 //  ^    ^       ^
 //  read len     capacity
 
-fn bool! Read_Buffer_Task.update(&self, Ws(<Socket>) *ws) {
+fn bool! Read_Buffer_Task.update(&self, Ws(<Socket>) *ws, bool masked = false, char[4] mask = {}) {
     if (self.read >= self.len) return true;
     char[] buf = (self.ptr + self.read)[:(self.len - self.read)];
     usz! n = ws.socket.read(buf);
     if (catch error = n) {
         case IoError.WOULD_BLOCK: return false;
         default:                  return error?;
+    }
+    if (masked) {
+        foreach (i, &x: buf[:n]) {
+            *x ^= mask[(self.read + i) % 4];
+        }
     }
     self.read += n;
     return self.read >= self.len;
@@ -576,6 +612,134 @@ fn bool! Read_Frame_Header_Task.update(&self, Ws(<Socket>) *ws)
     }
 }
 
+enum Read_Message_Task_State {
+    FRAME_HEADER,
+    SOLICITED_PING,
+    UNSOLICITED_PONG,
+    PAYLOAD,
+    DONE,
+}
+
+struct Read_Message_Task {
+    Read_Message_Task_State state;
+    Read_Frame_Header_Task read_frame_header_task;
+    Read_Buffer_Task payload_task;
+
+    Ws_Message message;
+    bool cont;
+    usz verify_pos;
+}
+
+fn void Read_Message_Task.reset(&self)
+{
+    self.state = FRAME_HEADER;
+    self.read_frame_header_task.reset();
+    self.cont = false;
+    self.verify_pos = 0;
+}
+
+fn bool! Read_Message_Task.update(&self, Ws(<Socket>) *ws)
+{
+    switch (self.state) {
+    case FRAME_HEADER:
+        if (!self.read_frame_header_task.update(ws)!) return false;
+        Ws_Frame_Header frame = self.read_frame_header_task.frame_header;
+        if (frame.opcode.is_control()) {
+            switch (frame.opcode) {
+            case ws::OPCODE_CLOSE:
+                return Ws_Error.CLOSE_FRAME_SENT?;
+            case ws::OPCODE_PING:
+                self.state = SOLICITED_PING;
+                self.payload_task.reset(frame.payload_len);
+                return false;
+            case ws::OPCODE_PONG:
+                // Unsolicited PONGs are just ignored
+                self.state = UNSOLICITED_PONG;
+                self.payload_task.reset(frame.payload_len);
+                return false;
+            default:
+                return Ws_Error.UNEXPECTED_OPCODE?;
+            }
+        } else {
+            if (!self.cont) {
+                switch (frame.opcode) {
+                case ws::OPCODE_TEXT:
+                case ws::OPCODE_BIN:
+                    self.message.kind = (Ws_Message_Kind) frame.opcode;
+                    self.state = PAYLOAD;
+                    self.payload_task.reset(frame.payload_len);
+                    self.cont = true;
+                    return false;
+                default:
+                    return Ws_Error.UNEXPECTED_OPCODE?;
+                }
+            } else {
+                if (frame.opcode != ws::OPCODE_CONT) {
+                    return Ws_Error.UNEXPECTED_OPCODE?;
+                }
+                self.state = PAYLOAD;
+                self.payload_task.reset(frame.payload_len);
+                return false;
+            }
+        }
+    case PAYLOAD:
+        Ws_Frame_Header frame = self.read_frame_header_task.frame_header;
+        bool finished = self.payload_task.update(ws, frame.masked, frame.mask)!;
+        if (self.message.kind == ws::MESSAGE_TEXT) {
+            // Verifying UTF-8
+            while VERIFY: (self.verify_pos < self.payload_task.read) {
+                usz size = self.payload_task.read - self.verify_pos;
+                if (catch excuse = ws::utf8_to_char32_fixed(&self.payload_task.ptr[self.verify_pos], &size)) {
+                    case ExtraUnicodeResult.SHORT_UTF8:
+                        if (!(frame.fin && finished)) {
+                            usz saved_read = self.payload_task.read;
+                            io::printfn("Before extension: %s", self.payload_task.view());
+                            self.payload_task.extend_unfinished_utf8(self.verify_pos);
+                            io::printfn("After extension: %s", self.payload_task.view());
+                            size = self.payload_task.read - self.verify_pos;;
+                            ws::utf8_to_char32_fixed(&self.payload_task.ptr[self.verify_pos], &size)!;
+                            self.payload_task.read = saved_read;
+                            break VERIFY; // Tolerating the unfinished UTF-8 sequences if the message is unfinished
+                        }
+                        nextcase;
+                    default:
+                        return excuse?; // Fail-fast on invalid UTF-8
+                }
+                self.verify_pos += size;
+            }
+        }
+        if (finished) {
+            if (frame.fin) {
+                self.state = DONE;
+                self.message.payload = self.payload_task.view();
+                return true;
+            } else {
+                self.state = FRAME_HEADER;
+                self.read_frame_header_task.reset();
+                return false;
+            }
+        }
+        return false;
+    case SOLICITED_PING:
+        Ws_Frame_Header frame = self.read_frame_header_task.frame_header;
+        if (self.payload_task.update(ws, frame.masked, frame.mask)!) {
+            // TODO: make sending frame async
+            ws.send_frame(true, ws::OPCODE_PONG, self.payload_task.view())!;
+            self.state = FRAME_HEADER;
+            self.read_frame_header_task.reset();
+        }
+        return false;
+    case UNSOLICITED_PONG:
+    Ws_Frame_Header frame = self.read_frame_header_task.frame_header;
+        if (self.payload_task.update(ws, frame.masked, frame.mask)!) {
+            self.state = FRAME_HEADER;
+            self.read_frame_header_task.reset();
+        }
+        return false;
+    case DONE:
+        return true;
+    }
+}
 
 module c3ws::ws;
 

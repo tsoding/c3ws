@@ -30,15 +30,12 @@ fn int main() {
             return 1;
         }
         ws.socket.sock.set_non_blocking(true)!!;
-        Read_Frame_Header_Task(<TcpSocket>) task;
+        Read_Message_Task(<TcpSocket>) task;
         task.reset();
         while (!task.update(&ws)!!) {
-            io::printfn("INFO: Read_Frame_Header_Task in progress: %s", task.state);
+            io::printfn("INFO: Read_Message_Task in progress: %s", task.state);
         }
-        io::printfn("INFO: Read_Frame_Header_Task finished: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d",
-            task.frame_header.fin,
-            task.frame_header.opcode.name(),
-            task.frame_header.rsv1, task.frame_header.rsv2, task.frame_header.rsv3,
-            task.frame_header.payload_len);
+        io::printfn("INFO: Recieved message: %s", (String)task.message.payload);
+        return 0;
     }
 }
