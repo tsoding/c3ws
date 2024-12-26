@@ -41,5 +41,6 @@ fn void main() {
             echo::serve(<TcpSocket>)(ws);
             return 0;
         }, mem::new($typeof(client), client))!!;
+        client_thread.detach()!!;
     }
 }
