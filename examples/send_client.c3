@@ -5,9 +5,9 @@ import std::net, std::os, std::time, libc;
 import std::net::tcp;
 import std::thread;
 
-macro @shift(&xs) {
-    var x = (*xs)[0];
-    *xs = (*xs)[1..];
+macro @shift(#xs) {
+    var x = #xs[0];
+    #xs = #xs[1..];
     return x;
 }
 
