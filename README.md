@@ -8,7 +8,7 @@ Initially translated from https://github.com/tsoding/cws
 ## Echo Server
 
 ```console
-$ ./build.sh # We will use the official C3 build system eventually I swear
+$ make
 ```
 
 In one terminal:
