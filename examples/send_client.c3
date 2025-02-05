@@ -1,5 +1,6 @@
 module example::send::client;
 import c3ws;
+import c3ws::async;
 import std::io;
 import std::net, std::os, std::time, libc;
 import std::net::tcp;
@@ -47,8 +48,11 @@ fn int main(String[] args)
     }
     String message = @shift(args);
 
-    Ws(<TcpSocket>) ws = {
-        .socket = tcp::connect(host, port)!!,
+    TcpSocket client = tcp::connect(host, port)!!;
+    Ws(<AsyncTcpSocket>) ws = {
+        .socket = AsyncTcpSocket {
+            .inner = &client,
+        },
         .client = true,
     };
     defer {

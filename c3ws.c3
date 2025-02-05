@@ -40,9 +40,8 @@ extern fn CInt shutdown(CInt sockfd, CInt how);
 
 fn void! Ws.close(&ws) {
     // Base on the ideas from https://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
-    $assert(Socket.typeid == TcpSocket.typeid); // TODO: support Socket.shutdown on the level of the interface
     // Informing the OS that we are not planning to send anything anymore
-    shutdown(ws.socket.sock, SHUT_WR);
+    ws.socket.shutdown(SHUT_WR)!;
     // Depleting input before closing socket, so the OS does not send RST just because we have some input pending on close
     char[1024] buffer;
     while (true) {
@@ -54,6 +53,7 @@ fn void! Ws.close(&ws) {
 
     // Actually destroying the socket
     ws.socket.close()!;
+    ws.temp.destroy();
 }
 
 fn void! Ws.read_entire_buffer_raw(&self, char[] buffer) {
@@ -70,24 +70,11 @@ fn void! Ws.write_entire_buffer_raw(&self, char[] buffer) {
     }
 }
 
-// TODO: Add something like Socket.peek to the std and make a PR to c3 maybe?
-fn usz! Ws.peek_raw(&self, char[] bytes) @dynamic
-{
-$if env::WIN32:
-    $error("Win32 is not support yet");
-    isz n = libc::recv(self.socket.sock, bytes.ptr, (int)bytes.len, MSG_PEEK);
-$else
-    const int MSG_PEEK = 2;
-    isz n = libc::recv(self.socket.sock, bytes.ptr, bytes.len, MSG_PEEK);
-$endif
-    if (n < 0) return os::socket_error()?;
-    return (usz)n;
-}
-
 struct Ws {
     Socket socket;
     bool debug; // Enable debug logging
     bool client;
+    TempAllocator* temp;
 }
 
 // TODO: make nonblocking version of c3ws::accept
@@ -95,6 +82,7 @@ fn Ws! accept(Socket socket) {
     Ws ws = {
         .socket = socket,
         .client = false,
+        .temp = allocator::new_temp_allocator(1024 * 256, &allocator::LIBC_ALLOCATOR)!,
     };
     ws.server_handshake()!;
     return ws;
@@ -114,17 +102,17 @@ fn void! Ws.server_handshake(ws)
 {
     // TODO: Ws.server_handshake assumes that request fits into 1024 bytes
     char[1024] buffer;
-    usz buffer_size = ws.peek_raw(&buffer)!;
+    usz buffer_size = ws.socket.peek(&buffer)!;
     String request = (String)buffer[0:buffer_size];
     String sec_websocket_key = ws::parse_sec_websocket_key_from_request(&request)!;
     ws.socket.read(buffer[0:buffer_size - request.len])!;
 
     DString handshake;
-    handshake.new_init(1024, allocator::temp());
+    handshake.new_init(1024, ws.temp);
     handshake.append("HTTP/1.1 101 Switching Protocols\r\n");
     handshake.append("Upgrade: websocket\r\n");
     handshake.append("Connection: Upgrade\r\n");
-    handshake.appendf("Sec-WebSocket-Accept: %s\r\n", ws::compute_sec_websocket_accept(sec_websocket_key));
+    handshake.appendf("Sec-WebSocket-Accept: %s\r\n", ws::compute_sec_websocket_accept(ws.temp, sec_websocket_key));
     handshake.append("\r\n");
     ws.socket.write(handshake.str_view())!;
 }
@@ -134,7 +122,7 @@ fn void! Ws.server_handshake(ws)
 fn void! Ws.client_handshake(ws, String host, String endpoint = "/")
 {
     DString handshake;
-    handshake.new_init(1024, allocator::temp());
+    handshake.new_init(1024, ws.temp);
     // TODO: customizable resource path
     handshake.appendf("GET %s HTTP/1.1\r\n", endpoint);
     handshake.appendf("Host: %s\r\n", host);
@@ -150,7 +138,7 @@ fn void! Ws.client_handshake(ws, String host, String endpoint = "/")
 
     // TODO: Ws.client_handshake assumes that response fits into 1024 bytes
     char[1024] buffer;
-    usz buffer_size = ws.peek_raw(&buffer)!;
+    usz buffer_size = ws.socket.peek(&buffer)!;
     String response = (String)buffer[0:buffer_size];
     String sec_websocket_accept = ws::parse_sec_websocket_accept_from_response(&response)!;
     ws.socket.read(buffer[0:buffer_size - response.len])!;
@@ -350,7 +338,7 @@ fn usz! Ws.read_frame_payload_chunk(ws, Ws_Frame_Header frame_header, char[] pay
 }
 
 fn char[]! Ws.read_frame_entire_payload(ws, Ws_Frame_Header frame_header) {
-    char[] payload = mem::temp_new_array(char, frame_header.payload_len);
+    char[] payload = allocator::new_array(ws.temp, char, frame_header.payload_len);
     usz payload_size = 0;
     while (payload_size < payload.len) {
         payload_size += ws.read_frame_payload_chunk(frame_header, payload, payload_size)!;
@@ -362,7 +350,7 @@ fn Ws_Message! Ws.read_message(ws)
 {
     Ws_Message message;
     DString payload;
-    payload.new_init(1024, allocator::temp());
+    payload.new_init(1024, ws.temp);
     bool cont = false;
     usz verify_pos = 0;
 
@@ -396,7 +384,7 @@ fn Ws_Message! Ws.read_message(ws)
                     return Ws_Error.UNEXPECTED_OPCODE?;
                 }
             }
-            char[] frame_payload = mem::temp_new_array(char, frame.payload_len);
+            char[] frame_payload = allocator::new_array(ws.temp, char, frame.payload_len);
             usz frame_payload_size = 0;
             while (frame_payload_size < frame_payload.len) {
                 usz n = ws.read_frame_payload_chunk(frame, frame_payload, frame_payload_size)!;
@@ -433,6 +421,62 @@ fn Ws_Message! Ws.read_message(ws)
     return message;
 }
 
+module c3ws::async;
+
+import std::net::tcp;
+import std::net::os;
+import coroutine;
+import libc;
+
+struct AsyncTcpSocket {
+    TcpSocket* inner;
+}
+
+// TODO: consider submitting these definitions as a PR to c3c
+const CInt SHUT_RD = 0;
+const CInt SHUT_WR = 1;
+const CInt SHUT_RDWR = 2;
+extern fn CInt shutdown(CInt sockfd, CInt how);
+
+fn void! AsyncTcpSocket.shutdown(&self, CInt how)
+{
+    if (shutdown(self.inner.sock, how) < 0) {
+        return os::socket_error()?;
+    }
+}
+
+// TODO: Add something like Socket.peek to the std and make a PR to c3 maybe?
+fn usz! AsyncTcpSocket.peek(&self, char[] bytes)
+{
+    coroutine::sleep_read(self.inner.sock);
+$if env::WIN32:
+    $error("Win32 is not support yet");
+    isz n = libc::recv(self.inner.sock, bytes.ptr, (int)bytes.len, MSG_PEEK);
+$else
+    const int MSG_PEEK = 2;
+    isz n = libc::recv(self.inner.sock, bytes.ptr, bytes.len, MSG_PEEK);
+$endif
+    if (n < 0) return os::socket_error()?;
+    return (usz)n;
+}
+
+fn usz! AsyncTcpSocket.read(&self, char[] bytes)
+{
+    coroutine::sleep_read(self.inner.sock);
+    return self.inner.read(bytes);
+}
+
+fn usz! AsyncTcpSocket.write(&self, char[] bytes)
+{
+    coroutine::sleep_write(self.inner.sock);
+    return self.inner.write(bytes);
+}
+
+fn void! AsyncTcpSocket.close(&self)
+{
+    return self.inner.close();
+}
+
 module c3ws::ws;
 
 import std::hash::sha1;
@@ -463,10 +507,10 @@ macro char oPCODE(char[2] header)      => ((header)[0] & 0xF);
 macro char mASK(char[2] header)        => ((header)[1] >> 7);
 macro char pAYLOAD_LEN(char[2] header) => ((header)[1] & 0x7F);
 
-fn String compute_sec_websocket_accept(String sec_websocket_key)
+fn String compute_sec_websocket_accept(TempAllocator* temp, String sec_websocket_key)
 {
     char[sha1::HASH_BYTES] src = sha1::hash(string::tformat("%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11", sec_websocket_key));
-    return base64::encode(&src, allocator::temp());
+    return base64::encode(&src, temp);
 }
 
 fn String! parse_sec_websocket_key_from_request(String *request) {
