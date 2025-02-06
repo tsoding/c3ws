@@ -51,7 +51,7 @@ fn int main(String[] args)
     TcpSocket client = tcp::connect(host, port)!!;
     Ws(<AsyncTcpSocket>) ws = {
         .socket = AsyncTcpSocket {
-            .inner = &client,
+            .tcp_socket = &client,
         },
         .client = true,
     };

@@ -1,3 +1,5 @@
+// This is a simple echo loop that reads messages from the WebSocket and sends them back.
+// It can be used for both Servers and Clients for testing.
 module test::autobahn::echo(<Socket>);
 
 import std::io;

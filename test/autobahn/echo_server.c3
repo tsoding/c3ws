@@ -41,7 +41,7 @@ fn int main() {
 
             io::printfn("[%d] INFO: Accepted connection", coroutine::id());
             Ws(<AsyncTcpSocket>)! ws = c3ws::accept(<AsyncTcpSocket>)(AsyncTcpSocket {
-                .inner = client,
+                .tcp_socket = client,
             });
             if (catch error = ws) {
                 io::printfn("ERROR: could not accept WebSocket connection: %s", error);

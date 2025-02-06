@@ -429,7 +429,7 @@ import coroutine;
 import libc;
 
 struct AsyncTcpSocket {
-    TcpSocket* inner;
+    TcpSocket* tcp_socket;
 }
 
 // TODO: consider submitting these definitions as a PR to c3c
@@ -440,7 +440,7 @@ extern fn CInt shutdown(CInt sockfd, CInt how);
 
 fn void! AsyncTcpSocket.shutdown(&self, CInt how)
 {
-    if (shutdown(self.inner.sock, how) < 0) {
+    if (shutdown(self.tcp_socket.sock, how) < 0) {
         return os::socket_error()?;
     }
 }
@@ -448,13 +448,13 @@ fn void! AsyncTcpSocket.shutdown(&self, CInt how)
 // TODO: Add something like Socket.peek to the std and make a PR to c3 maybe?
 fn usz! AsyncTcpSocket.peek(&self, char[] bytes)
 {
-    coroutine::sleep_read(self.inner.sock);
+    coroutine::sleep_read(self.tcp_socket.sock);
 $if env::WIN32:
     $error("Win32 is not support yet");
-    isz n = libc::recv(self.inner.sock, bytes.ptr, (int)bytes.len, MSG_PEEK);
+    isz n = libc::recv(self.tcp_socket.sock, bytes.ptr, (int)bytes.len, MSG_PEEK);
 $else
     const int MSG_PEEK = 2;
-    isz n = libc::recv(self.inner.sock, bytes.ptr, bytes.len, MSG_PEEK);
+    isz n = libc::recv(self.tcp_socket.sock, bytes.ptr, bytes.len, MSG_PEEK);
 $endif
     if (n < 0) return os::socket_error()?;
     return (usz)n;
@@ -462,19 +462,19 @@ $endif
 
 fn usz! AsyncTcpSocket.read(&self, char[] bytes)
 {
-    coroutine::sleep_read(self.inner.sock);
-    return self.inner.read(bytes);
+    coroutine::sleep_read(self.tcp_socket.sock);
+    return self.tcp_socket.read(bytes);
 }
 
 fn usz! AsyncTcpSocket.write(&self, char[] bytes)
 {
-    coroutine::sleep_write(self.inner.sock);
-    return self.inner.write(bytes);
+    coroutine::sleep_write(self.tcp_socket.sock);
+    return self.tcp_socket.write(bytes);
 }
 
 fn void! AsyncTcpSocket.close(&self)
 {
-    return self.inner.close();
+    return self.tcp_socket.close();
 }
 
 module c3ws::ws;

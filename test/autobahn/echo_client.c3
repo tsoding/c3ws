@@ -8,7 +8,7 @@ import std::net::tcp;
 fn int main() {
     TcpSocket client = tcp::connect(config::HOST, config::PORT)!!;
     Ws(<AsyncTcpSocket>) ws = c3ws::connect(<AsyncTcpSocket>)(AsyncTcpSocket { 
-        .inner = &client 
+        .tcp_socket = &client
     }, string::tformat("%s:%d", config::HOST, config::PORT))!!;
     echo::serve(<AsyncTcpSocket>)(ws);
     return 0;
