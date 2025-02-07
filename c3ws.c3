@@ -150,7 +150,7 @@ fn void! Ws.send_frame(ws, bool fin, Ws_Opcode opcode, char[] payload)
     if (ws.debug) {
         io::printfn("C3WS DEBUG: TX FRAME: FIN(%d), OPCODE(%s), RSV(000), PAYLOAD_LEN: %d",
                     fin,
-                    opcode.name(),
+                    opcode.name(ws.temp),
                     payload.len);
     }
 
@@ -293,7 +293,7 @@ fn Ws_Frame_Header! Ws.read_frame_header(ws)
     if (ws.debug) {
         io::printfn("C3WS DEBUG: RX FRAME: FIN(%d), OPCODE(%s), RSV(%d%d%d), PAYLOAD_LEN: %d",
                     frame_header.fin,
-                    frame_header.opcode.name(),
+                    frame_header.opcode.name(ws.temp),
                     frame_header.rsv1, frame_header.rsv2, frame_header.rsv3,
                     frame_header.payload_len);
     }
@@ -509,7 +509,7 @@ macro char pAYLOAD_LEN(char[2] header) => ((header)[1] & 0x7F);
 
 fn String compute_sec_websocket_accept(TempAllocator* temp, String sec_websocket_key)
 {
-    char[sha1::HASH_BYTES] src = sha1::hash(string::tformat("%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11", sec_websocket_key));
+    char[sha1::HASH_BYTES] src = sha1::hash(string::format("%s258EAFA5-E914-47DA-95CA-C5AB0DC85B11", sec_websocket_key, allocator: temp));
     return base64::encode(&src, temp);
 }
 
@@ -619,7 +619,7 @@ const Ws_Opcode OPCODE_CLOSE = 0x8;
 const Ws_Opcode OPCODE_PING  = 0x9;
 const Ws_Opcode OPCODE_PONG  = 0xA;
 
-fn String Ws_Opcode.name(opcode)
+fn String Ws_Opcode.name(opcode, TempAllocator *temp)
 {
     switch (opcode) {
     case OPCODE_CONT:  return "CONT";
@@ -630,11 +630,11 @@ fn String Ws_Opcode.name(opcode)
     case OPCODE_PONG:  return "PONG";
     default:
         if (0x3 <= opcode && opcode <= 0x7) {
-            return string::tformat("NONCONTROL(0x%X)", opcode & 0xF);
+            return string::format("NONCONTROL(0x%X)", opcode & 0xF, allocator: temp);
         } else if (0xB <= opcode && opcode <= 0xF) {
-            return string::tformat("CONTROL(0x%X)", opcode & 0xF);
+            return string::format("CONTROL(0x%X)", opcode & 0xF, allocator: temp);
         } else {
-            return string::tformat("INVALID(0x%X)", opcode & 0xF);
+            return string::format("INVALID(0x%X)", opcode & 0xF, allocator: temp);
         }
     }
 }
